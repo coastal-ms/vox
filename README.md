@@ -20,6 +20,10 @@ Vox is a Copilot CLI extension. Run `/vox` and a reactive listening orb opens in
 its own window: speak your turn, the active session hears it, and the reply is
 read back to you. Voice in, voice out — no editor, no tab-juggling, just talk.
 
+It works in the **GitHub Copilot app**, too — the same panel renders right inside
+the app. Add Vox from the app's panel (or ask Copilot to open it); slash commands
+like `/vox` stay CLI-only.
+
 **→ See it in action at [aasis21.github.io/vox](https://aasis21.github.io/vox/)**
 
 > Sibling project to [`aasis21/engram`](https://aasis21.github.io/engram/) and
@@ -96,6 +100,9 @@ your turn, and pause to send — the reply is read back to you.
 | `/vox` | Start Vox voice mode and make this session the active voice target. Opens the UI as its own desktop-style window via Chrome/Edge app mode (falls back to `http://localhost:4321`). Tap the orb. |
 | `/vox-stop` | Stop Vox for this session and release its voice server. |
 | `/vox-who` | List live Vox sessions and show which one is active. |
+
+> **In the Copilot app**, open Vox from the app's canvas panel (or ask Copilot to
+> open it) — slash commands aren't available there, but the panel works the same.
 
 ## Manual install / dev
 
