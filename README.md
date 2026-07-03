@@ -12,7 +12,7 @@
 
 <br/>
 
-<img src="docs/assets/hero-listening.webp" alt="The Vox panel listening: a glowing green orb, a live caption of the spoken turn, and the active session in the top dropdown." width="820" />
+<img src="docs/assets/poster.webp" alt="Vox — talk to Copilot, hear it talk back. A glowing listening orb next to the tagline, feature chips for barge-in interrupt, zero build step, and Windows/macOS/Linux." width="820" />
 
 </div>
 
