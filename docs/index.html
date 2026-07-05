@@ -94,8 +94,8 @@ main { position: relative; z-index: 1; }
 .ph-badge { display: inline-flex; align-items: center; text-decoration: none; border: 1px solid var(--border); border-radius: 12px; padding: 6px; margin: 0; background: var(--bg-elev); transition: border-color .18s, box-shadow .18s, transform .18s; animation: fade-up .8s ease-out .1s both; line-height: 0; }
 .ph-badge:hover { border-color: var(--accent); box-shadow: 0 10px 26px -14px var(--glow); transform: translateY(-1px); }
 .ph-badge img { display: block; border-radius: 8px; width: 200px; height: 43px; }
-.ph-rank-badge { display: inline-flex; align-items: center; text-decoration: none; border-radius: 10px; transition: box-shadow .18s, transform .18s; animation: fade-up .8s ease-out .05s both; line-height: 0; }
-.ph-rank-badge:hover { box-shadow: 0 10px 26px -14px rgba(255, 97, 84, 0.55); transform: translateY(-1px); }
+.ph-rank-badge { display: inline-flex; align-items: center; text-decoration: none; border: 1px solid var(--border); border-radius: 12px; padding: 6px; margin: 0; background: var(--bg-elev); transition: border-color .18s, box-shadow .18s, transform .18s; animation: fade-up .8s ease-out .05s both; line-height: 0; }
+.ph-rank-badge:hover { border-color: #ff6154; box-shadow: 0 10px 26px -14px rgba(255, 97, 84, 0.55); transform: translateY(-1px); }
 .ph-rank-badge svg { display: block; width: 200px; height: 43px; border-radius: 8px; }
 @keyframes dotpulse { 0% { box-shadow: 0 0 0 0 var(--glow); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
 .hero-title { font-size: clamp(46px, 8.2vw, 92px); line-height: 1.0; letter-spacing: -.025em; font-weight: 400; margin: 0 auto 26px; max-width: 14ch; }
@@ -279,8 +279,8 @@ footer .foot-links { display: flex; gap: 18px; flex-wrap: wrap; } footer .foot-l
     <a class="ph-rank-badge" href="https://www.producthunt.com/products/vox-5" target="_blank" rel="noopener" aria-label="Vox — #6 Product of the Day on Product Hunt">
       <svg width="200" height="43" viewBox="0 0 250 54" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
         <rect x="0.5" y="0.5" width="249" height="53" rx="10" fill="#FFFFFF" stroke="#FF6154"/>
-        <text x="53" y="20" font-family="Helvetica-Bold, Helvetica, Arial, sans-serif" font-size="9" font-weight="bold" fill="#FF6154">PRODUCT HUNT</text>
-        <text x="52" y="40" font-family="Helvetica-Bold, Helvetica, Arial, sans-serif" font-size="16" font-weight="bold" fill="#FF6154">#6 Product of the Day</text>
+        <text x="53" y="20" textLength="90" lengthAdjust="spacingAndGlyphs" font-family="Helvetica-Bold, Helvetica, Arial, sans-serif" font-size="9" font-weight="bold" fill="#FF6154">PRODUCT HUNT</text>
+        <text x="52" y="40" textLength="188" lengthAdjust="spacingAndGlyphs" font-family="Helvetica-Bold, Helvetica, Arial, sans-serif" font-size="16" font-weight="bold" fill="#FF6154">#6 Product of the Day</text>
         <g transform="translate(17,13)">
           <path d="M4.33017156,16.3644206 L0.32752125,24.9004569 C0.202208125,25.158455 0.334893125,25.3206253 0.755059375,25.2395391 L4.01320063,24.5318828 C4.07768317,24.5092403 4.14870854,24.5147003 4.20897262,24.5469326 C4.2692367,24.579165 4.31320644,24.6352103 4.33016937,24.7014141 L5.79706969,27.7089291 C5.93712656,28.0332697 6.09929469,28.0996166 6.22460781,27.8416141 L10.4852563,18.9075403 L4.33017156,16.3644206 Z" fill="#DE7818"/>
           <path d="M16.6698284,16.3644206 L20.6724766,24.9004569 C20.8051616,25.158455 20.6651047,25.3206253 20.2449384,25.2395391 L16.9867972,24.5318828 C16.9222981,24.5100745 16.8516508,24.5159193 16.7916126,24.5480308 C16.7315744,24.5801424 16.6874945,24.6356596 16.6698284,24.7014141 L15.2029281,27.7089444 C15.0628713,28.033285 14.9080728,28.0996319 14.77539,27.8416294 L10.5147438,18.9075403 L16.6698284,16.3644206 Z" fill="#DE7818"/>
