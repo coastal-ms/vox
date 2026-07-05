@@ -90,9 +90,16 @@ main { position: relative; z-index: 1; }
 .hero { max-width: 1120px; margin: 0 auto; padding: 70px 32px 40px; text-align: center; }
 .hero-eyebrow { display: inline-flex; align-items: center; gap: 9px; font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--fg-dim); border: 1px solid var(--border); border-radius: 100px; padding: 7px 15px; margin: 0 0 18px; animation: fade-up .7s ease-out both; }
 .hero-eyebrow .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 0 var(--glow); animation: dotpulse 2.2s infinite; }
-.ph-badge { display: inline-flex; align-items: center; text-decoration: none; border: 1px solid var(--border); border-radius: 12px; padding: 6px; margin: 0 0 26px; background: var(--bg-elev); transition: border-color .18s, box-shadow .18s, transform .18s; animation: fade-up .8s ease-out .1s both; line-height: 0; }
+.ph-badges { display: flex; align-items: stretch; justify-content: center; gap: 10px; flex-wrap: wrap; margin: 0 0 26px; }
+.ph-badge { display: inline-flex; align-items: center; text-decoration: none; border: 1px solid var(--border); border-radius: 12px; padding: 6px; margin: 0; background: var(--bg-elev); transition: border-color .18s, box-shadow .18s, transform .18s; animation: fade-up .8s ease-out .1s both; line-height: 0; }
 .ph-badge:hover { border-color: var(--accent); box-shadow: 0 10px 26px -14px var(--glow); transform: translateY(-1px); }
 .ph-badge img { display: block; border-radius: 8px; width: 200px; height: 43px; }
+.ph-rank-badge { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; border: 1px solid var(--border); border-radius: 12px; padding: 6px 14px; background: var(--bg-elev); transition: border-color .18s, box-shadow .18s, transform .18s; animation: fade-up .8s ease-out .05s both; }
+.ph-rank-badge:hover { border-color: var(--accent-3); box-shadow: 0 10px 26px -14px var(--glow); transform: translateY(-1px); }
+.ph-rank-badge .ph-rank-icon { flex: none; width: 22px; height: 22px; color: var(--accent-3); }
+.ph-rank-badge .ph-rank-text { text-align: left; line-height: 1.15; }
+.ph-rank-badge .ph-rank-eyebrow { display: block; font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: var(--fg-faint); }
+.ph-rank-badge .ph-rank-title { display: block; font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--fg); }
 @keyframes dotpulse { 0% { box-shadow: 0 0 0 0 var(--glow); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
 .hero-title { font-size: clamp(46px, 8.2vw, 92px); line-height: 1.0; letter-spacing: -.025em; font-weight: 400; margin: 0 auto 26px; max-width: 14ch; }
 .hero-title .line { display: block; animation: fade-up .9s ease-out both; }
@@ -271,9 +278,15 @@ footer .foot-links { display: flex; gap: 18px; flex-wrap: wrap; } footer .foot-l
 
 <section class="hero">
   <span class="hero-eyebrow"><span class="dot" aria-hidden="true"></span> Voice for GitHub Copilot CLI</span>
-  <a class="ph-badge" id="ph-badge" href="https://www.producthunt.com/products/vox-5" target="_blank" rel="noopener" aria-label="Vox — Featured on Product Hunt, live vote count">
-    <img id="ph-badge-img" width="200" height="43" alt="Vox — Featured on Product Hunt" loading="lazy" />
-  </a>
+  <div class="ph-badges">
+    <a class="ph-rank-badge" href="https://www.producthunt.com/products/vox-5" target="_blank" rel="noopener" aria-label="Vox — #6 Product of the Day on Product Hunt">
+      <svg class="ph-rank-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2l2.6 5.27 5.82.85-4.21 4.1.99 5.78L12 15.27l-5.2 2.73.99-5.78-4.21-4.1 5.82-.85L12 2z" fill="currentColor"/></svg>
+      <span class="ph-rank-text"><span class="ph-rank-eyebrow">Product Hunt</span><span class="ph-rank-title">#6 Product of the Day</span></span>
+    </a>
+    <a class="ph-badge" id="ph-badge" href="https://www.producthunt.com/products/vox-5" target="_blank" rel="noopener" aria-label="Vox — Featured on Product Hunt, live vote count">
+      <img id="ph-badge-img" width="200" height="43" alt="Vox — Featured on Product Hunt" loading="lazy" />
+    </a>
+  </div>
   <h1 class="hero-title">
     <span class="line line-1"><em>Talk to</em> your Copilot.</span>
     <span class="line line-2">Out loud, <span class="accent">hands-free</span>.</span>
