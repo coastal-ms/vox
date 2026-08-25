@@ -1,6 +1,6 @@
 // Client renderer for the voice-mode canvas (voice in / voice out, no camera).
 // Self-contained HTML served from the per-instance loopback server. Turns go to
-// POST /turn; replies are spoken via SpeechSynthesis. Centerpiece is an
+// POST /turn; replies are spoken by browser SpeechSynthesis, local Kokoro, or Chatterbox Nano. Centerpiece is an
 // audio-reactive orb driven by the mic level + conversation state.
 
 export function renderHtml(instanceId) {
@@ -330,6 +330,36 @@ export function renderHtml(instanceId) {
   .live-sep { align-self: center; color: var(--muted); font: 600 10px/1 var(--sans); letter-spacing: .22em; text-transform: uppercase; opacity: .8; padding: 2px 0; }
   .live-sep::before, .live-sep::after { content: "·"; margin: 0 8px; opacity: .6; }
 
+  /* persisted speech controls */
+  #settings {
+    position: fixed; top: 64px; left: 0; bottom: 0; width: min(340px, 88vw); z-index: 4;
+    background: rgba(9, 11, 17, .9); backdrop-filter: blur(18px);
+    border-right: 1px solid var(--stroke); border-top: 1px solid var(--stroke);
+    border-top-right-radius: 16px; padding: 18px; overflow-y: auto;
+    transform: translateX(-105%); transition: transform .32s cubic-bezier(.4,0,.2,1);
+  }
+  #settings[data-open="true"] { transform: translateX(0); }
+  .settings-head { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+  .settings-head h2 { flex: 1; margin: 0; font: 600 13px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; }
+  .field { display: grid; gap: 8px; margin: 0 0 18px; }
+  .field label { color: var(--muted); font: 600 11px/1.2 var(--sans); letter-spacing: .08em; text-transform: uppercase; }
+  .field select {
+    width: 100%; height: 40px; border-radius: 10px; padding: 0 10px;
+    color: var(--ink); background: #151925; border: 1px solid var(--stroke-strong);
+  }
+  .range-row { display: grid; grid-template-columns: 1fr 52px; align-items: center; gap: 10px; }
+  .range-row input { width: 100%; accent-color: var(--accent); }
+  .range-value { color: var(--ink); text-align: right; font: 500 12px/1 var(--sans); }
+  .preview-voice {
+    width: 100%; min-height: 40px; border-radius: 10px; padding: 0 12px;
+    color: var(--ink); background: color-mix(in srgb, var(--accent) 18%, #151925);
+    border: 1px solid var(--stroke-strong); font: 600 12px/1 var(--sans); cursor: pointer;
+  }
+  .preview-voice:hover:not(:disabled) { border-color: var(--accent); }
+  .preview-voice:disabled { cursor: wait; opacity: .62; }
+  .field-note { margin: -9px 0 17px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+  #kokoroStatus { min-height: 1.4em; color: color-mix(in srgb, var(--accent) 80%, #fff); }
+
   /* transient toast — confirms which chat you switched to; sits low, just above the
      bottom hint, so it appears right where your attention is when you switch */
   #toast {
@@ -385,6 +415,7 @@ export function renderHtml(instanceId) {
         <button id="send" class="ghost" aria-label="Send now" data-tip="Send now · Space">&#x27A4;</button>
         <button id="stop" class="ghost" aria-label="Stop" data-tip="Stop / cancel · Esc">&#x23F9;</button>
         <button id="trig" class="ghost" aria-label="Start listening" data-tip="Start listening · Space">&#x1F3A4;</button>
+        <button id="settingsBtn" class="ghost" aria-label="Speech settings" data-tip="Speech settings">&#x2699;</button>
         <button id="logBtn" class="ghost" aria-label="Transcript" data-tip="Transcript log">&#x1F4DC;</button>
         <button id="spk" class="ghost" aria-label="Mute voice" data-tip="Mute voice">&#x1F50A;</button>
         <button id="end" class="ghost" aria-label="End session" data-tip="End session">&#x2715;</button>
@@ -412,10 +443,49 @@ export function renderHtml(instanceId) {
       <div id="logBody"><div id="logEmpty">No turns yet.</div></div>
     </aside>
 
+    <aside id="settings" data-open="false">
+      <div class="settings-head"><h2>Speech settings</h2><button id="settingsClose" class="ghost" title="Close">&#x2715;</button></div>
+      <div class="field">
+        <label for="ttsEngine">Engine</label>
+        <select id="ttsEngine"><option value="browser">Browser Speech</option><option value="kokoro">Kokoro (local model)</option><option value="chatterbox">Chatterbox Nano (local authorized voice)</option></select>
+      </div>
+      <div class="field">
+        <label id="ttsVoiceLabel" for="ttsVoice">Kokoro voice</label>
+        <select id="ttsVoice"></select>
+      </div>
+      <div class="field">
+        <label for="ttsRate">Speech rate</label>
+        <div class="range-row"><input id="ttsRate" type="range" min="0.5" max="2" step="0.05" /><span id="ttsRateValue" class="range-value"></span></div>
+      </div>
+      <div class="field">
+        <label id="ttsPitchLabel" for="ttsPitch">Pitch shift</label>
+        <div class="range-row"><input id="ttsPitch" type="range" min="-12" max="12" step="1" /><span id="ttsPitchValue" class="range-value"></span></div>
+      </div>
+      <div class="field">
+        <button id="previewVoice" class="preview-voice" type="button">&#x25B6; Preview selected voice</button>
+      </div>
+      <p id="ttsPitchNote" class="field-note">Pitch is approximate. Kokoro compensates generation speed before Web Audio pitch shifting so the selected speech rate stays nearly constant.</p>
+      <p id="kokoroStatus" class="field-note" aria-live="polite"></p>
+      <p id="chatterboxStatus" class="field-note" aria-live="polite"></p>
+    </aside>
+
     <div id="grain"></div>
   </div>
 
-<script>
+<script type="module">
+import {
+  DEFAULT_TTS_PREFERENCES,
+  KOKORO_MODEL_ID,
+  KOKORO_RUNTIME_URL,
+  KOKORO_SAMPLE_RATE,
+  KOKORO_VOICES,
+  SpeechQueue,
+  groupKokoroVoices,
+  kokoroPlaybackTiming,
+  normalizeTtsPreferences,
+  pitchRatioFromSemitones,
+  speakWithFallback
+} from "/tts-core.mjs";
 (function () {
   "use strict";
   var INSTANCE = ${JSON.stringify(instanceId)};
@@ -446,6 +516,21 @@ export function renderHtml(instanceId) {
     logBody: document.getElementById("logBody"),
     logEmpty: document.getElementById("logEmpty"),
     logBtn: document.getElementById("logBtn"),
+    settings: document.getElementById("settings"),
+    settingsBtn: document.getElementById("settingsBtn"),
+    settingsClose: document.getElementById("settingsClose"),
+    ttsEngine: document.getElementById("ttsEngine"),
+    ttsVoiceLabel: document.getElementById("ttsVoiceLabel"),
+    ttsVoice: document.getElementById("ttsVoice"),
+    ttsRate: document.getElementById("ttsRate"),
+    ttsRateValue: document.getElementById("ttsRateValue"),
+    ttsPitch: document.getElementById("ttsPitch"),
+    ttsPitchLabel: document.getElementById("ttsPitchLabel"),
+    ttsPitchValue: document.getElementById("ttsPitchValue"),
+    ttsPitchNote: document.getElementById("ttsPitchNote"),
+    previewVoice: document.getElementById("previewVoice"),
+    kokoroStatus: document.getElementById("kokoroStatus"),
+    chatterboxStatus: document.getElementById("chatterboxStatus"),
     logClear: document.getElementById("logClear"),
     logClose: document.getElementById("logClose"),
     toast: document.getElementById("toast"),
@@ -460,7 +545,10 @@ export function renderHtml(instanceId) {
   // Listening is manual to start: you open each turn yourself (orb / mic / Space),
   // but once a reply finishes we hand the mic back so you needn't click every time.
   // Once listening, the turn is sent after this much silence — or instantly via ➤.
-  var SILENCE_MS = 4000;
+  var SILENCE_MS = 2000;
+  var ttsPrefs = normalizeTtsPreferences(DEFAULT_TTS_PREFERENCES);
+  var preferenceTimer = 0;
+  var preferenceRevision = 0;
 
   var LABELS = {
     idle: "Tap the orb to start",
@@ -748,38 +836,414 @@ export function renderHtml(instanceId) {
     setState("listening");
   }
 
-  // ---- TTS queue (ordered, with barge-in) ----
-  // Sentences are enqueued as they stream in and spoken back-to-back, so the agent
-  // starts talking before the full reply has arrived.
-  var speakQueue = [];
-  var speaking = false;
-  var speakDoneResolve = null;
-  function settleSpeakDone() { if (speakDoneResolve && !speaking && !speakQueue.length) { var r = speakDoneResolve; speakDoneResolve = null; r(); } }
+  // ---- TTS queue (ordered, cancellable, with browser fallback) ----
+  // Kokoro loads in the background. Until it is ready, or if it fails, each
+  // sentence is spoken immediately with the browser's reliable native engine.
+  var browserUtterance = null;
+  var browserDriver = {
+    speak: function (text, preferences, cancelled) {
+      return new Promise(function (resolve, reject) {
+        if (!window.speechSynthesis || typeof SpeechSynthesisUtterance === "undefined") {
+          reject(new Error("Browser speech synthesis is unavailable"));
+          return;
+        }
+        if (cancelled && cancelled()) { resolve(); return; }
+        try {
+          var u = new SpeechSynthesisUtterance(text);
+          u.rate = preferences.rate;
+          u.pitch = pitchRatioFromSemitones(preferences.pitchSemitones);
+          u.onend = function () { if (browserUtterance === u) browserUtterance = null; resolve(); };
+          u.onerror = function () { if (browserUtterance === u) browserUtterance = null; resolve(); };
+          browserUtterance = u;
+          window.speechSynthesis.speak(u);
+        } catch (error) { reject(error); }
+      });
+    },
+    cancel: function () {
+      browserUtterance = null;
+      try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
+    }
+  };
+
+  var kokoroWorker = null, kokoroReady = false, kokoroLoading = null, kokoroFailure = null;
+  var kokoroSource = null, ttsAudioCtx = null, kokoroRequestN = 0, kokoroGeneration = 1;
+  var kokoroPending = new Map(), kokoroAudioQueue = [], kokoroPlaybackWaiters = [];
+  var previewGeneration = 0;
+  function updateKokoroStatus(text) { if (el.kokoroStatus) el.kokoroStatus.textContent = text || ""; }
+
+  function settleKokoroPlayback() {
+    if (kokoroSource || kokoroAudioQueue.length) return;
+    for (var waiter of kokoroPlaybackWaiters.splice(0)) waiter();
+  }
+
+  function waitForKokoroPlayback() {
+    if (!kokoroSource && !kokoroAudioQueue.length) return Promise.resolve();
+    return new Promise(function (resolve) { kokoroPlaybackWaiters.push(resolve); });
+  }
+
+  function queueKokoroAudio(rawAudio, sampleRate, preferences, cancelled) {
+    if (cancelled && cancelled()) return;
+    kokoroAudioQueue.push({ rawAudio: rawAudio, sampleRate: sampleRate, preferences: preferences, cancelled: cancelled });
+    void playNextKokoroAudio();
+  }
+
+  async function playNextKokoroAudio() {
+    if (kokoroSource || !kokoroAudioQueue.length) { settleKokoroPlayback(); return; }
+    var item = kokoroAudioQueue.shift();
+    if (item.cancelled && item.cancelled()) { void playNextKokoroAudio(); return; }
+    try {
+      var samples = new Float32Array(item.rawAudio);
+      var AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) throw new Error("Web Audio is unavailable");
+      if (!ttsAudioCtx || ttsAudioCtx.state === "closed") ttsAudioCtx = new AudioContextClass();
+      if (ttsAudioCtx.state === "suspended") await ttsAudioCtx.resume();
+      var timing = kokoroPlaybackTiming(item.preferences.rate, item.preferences.pitchSemitones);
+      var buffer = ttsAudioCtx.createBuffer(1, samples.length, item.sampleRate || KOKORO_SAMPLE_RATE);
+      buffer.getChannelData(0).set(samples);
+      var source = ttsAudioCtx.createBufferSource();
+      kokoroSource = source;
+      source.buffer = buffer;
+      source.playbackRate.value = timing.pitchRatio;
+      source.connect(ttsAudioCtx.destination);
+      source.onended = function () {
+        if (kokoroSource === source) kokoroSource = null;
+        void playNextKokoroAudio();
+      };
+      source.start();
+    } catch (error) {
+      kokoroSource = null;
+      void playNextKokoroAudio();
+    }
+  }
+
+  function handleKokoroWorkerMessage(msg, readyResolve, readyReject) {
+    if (!msg || !msg.status) return;
+    if (msg.status === "loading") {
+      updateKokoroStatus("Loading cached Kokoro model on " + (msg.device === "webgpu" ? "WebGPU" : "WASM") + "...");
+      return;
+    }
+    if (msg.status === "progress") {
+      var percent = Number(msg.progress && msg.progress.progress);
+      updateKokoroStatus("Loading cached Kokoro model on " + (msg.device === "webgpu" ? "WebGPU" : "WASM") +
+        (isFinite(percent) ? ": " + Math.round(percent) + "%" : "..."));
+      return;
+    }
+    if (msg.status === "fallback") {
+      updateKokoroStatus("WebGPU unavailable; loading cached WASM fallback...");
+      return;
+    }
+    if (msg.status === "ready") {
+      kokoroReady = true; kokoroFailure = null;
+      populateKokoroVoices(msg.voices || KOKORO_VOICES);
+      updateKokoroStatus("Kokoro ready (" + (msg.device === "webgpu" ? "WebGPU" : "WASM fallback") + ")");
+      toast("Kokoro is ready on " + (msg.device === "webgpu" ? "WebGPU" : "WASM"));
+      readyResolve();
+      return;
+    }
+    if (msg.status === "error") {
+      kokoroFailure = new Error(msg.error || "Kokoro worker failed");
+      updateKokoroStatus("Kokoro unavailable - Browser Speech will be used.");
+      readyReject(kokoroFailure);
+      return;
+    }
+    var pending = kokoroPending.get(msg.requestId);
+    if (!pending || Number(msg.generation) !== pending.generation) return;
+    kokoroPending.delete(msg.requestId);
+    if (msg.status === "generation-error") {
+      pending.reject(new Error(msg.error || "Kokoro generation failed"));
+      return;
+    }
+    if (msg.status === "complete") {
+      queueKokoroAudio(msg.audio, Number(msg.sampleRate), pending.preferences, pending.cancelled);
+      pending.resolve();
+    }
+  }
+
+  function prepareKokoro(forceRetry) {
+    if (forceRetry) { kokoroFailure = null; kokoroReady = false; }
+    if (kokoroReady) return Promise.resolve();
+    if (kokoroLoading) return kokoroLoading;
+    if (kokoroFailure) return Promise.reject(kokoroFailure);
+    if (kokoroWorker) { try { kokoroWorker.terminate(); } catch (e) {} }
+    updateKokoroStatus("Starting Kokoro background worker...");
+    kokoroLoading = new Promise(function (resolve, reject) {
+      kokoroWorker = new Worker("/kokoro-worker.mjs", { type: "module", name: "vox-kokoro" });
+      kokoroWorker.onmessage = function (event) { handleKokoroWorkerMessage(event.data, resolve, reject); };
+      kokoroWorker.onerror = function (event) {
+        kokoroFailure = new Error(event.message || "Kokoro worker failed");
+        updateKokoroStatus("Kokoro unavailable - Browser Speech will be used.");
+        reject(kokoroFailure);
+      };
+    }).finally(function () {
+      kokoroLoading = null;
+    });
+    return kokoroLoading;
+  }
+
+  var kokoroDriver = {
+    speak: async function (text, preferences, cancelled) {
+      if (!kokoroReady || !kokoroWorker) {
+        void prepareKokoro().catch(function () {});
+        throw new Error("Kokoro is still loading");
+      }
+      var timing = kokoroPlaybackTiming(preferences.rate, preferences.pitchSemitones);
+      var requestId = "k" + (++kokoroRequestN);
+      var generation = kokoroGeneration;
+      return new Promise(function (resolve, reject) {
+        kokoroPending.set(requestId, {
+          generation: generation,
+          preferences: preferences,
+          cancelled: cancelled,
+          resolve: resolve,
+          reject: reject
+        });
+        kokoroWorker.postMessage({
+          type: "generate",
+          requestId: requestId,
+          generation: generation,
+          text: text,
+          voice: preferences.voice,
+          speed: timing.generationSpeed
+        });
+      });
+    },
+    cancel: function () {
+      kokoroGeneration++;
+      if (kokoroWorker) {
+        try { kokoroWorker.postMessage({ type: "cancel", generation: kokoroGeneration }); } catch (e) {}
+      }
+      kokoroPending.forEach(function (pending) { pending.resolve(); });
+      kokoroPending.clear();
+      kokoroAudioQueue.length = 0;
+      if (kokoroSource) {
+        try { kokoroSource.stop(); } catch (e) {}
+        kokoroSource = null;
+      }
+      settleKokoroPlayback();
+    }
+  };
+
+  var chatterboxReady = false, chatterboxLoading = null, chatterboxFailure = null;
+  var chatterboxAudio = null, chatterboxController = null, chatterboxRequestId = "";
+  var chatterboxFinish = null, chatterboxRequestN = 0;
+
+  function updateChatterboxStatus(text) {
+    if (el.chatterboxStatus) el.chatterboxStatus.textContent = text || "";
+  }
+
+  function renderChatterboxStatus(info) {
+    info = info && typeof info === "object" ? info : {};
+    chatterboxReady = info.state === "ready";
+    if (info.state === "error") chatterboxFailure = new Error(info.error || "Chatterbox unavailable");
+    var parts = ["Chatterbox Nano: " + (info.state || "stopped")];
+    if (info.detail) parts.push(info.detail);
+    if (info.referencePath) parts.push("Reference: " + info.referencePath);
+    if (isFinite(Number(info.modelLoadMs))) parts.push("Model load: " + Math.round(Number(info.modelLoadMs)) + " ms");
+    if (isFinite(Number(info.lastSynthesisMs))) parts.push("Last synthesis: " + Math.round(Number(info.lastSynthesisMs)) + " ms");
+    if (isFinite(Number(info.lastResponseMs))) parts.push("Audio response: " + Math.round(Number(info.lastResponseMs)) + " ms");
+    if (info.error) parts.push("Error: " + info.error);
+    updateChatterboxStatus(parts.join(" | "));
+  }
+
+  function refreshChatterboxStatus() {
+    return fetch("/chatterbox/status", { cache: "no-store" }).then(function (response) {
+      if (!response.ok) throw new Error("status " + response.status);
+      return response.json();
+    }).then(function (info) {
+      renderChatterboxStatus(info);
+      return info;
+    }).catch(function (error) {
+      updateChatterboxStatus("Chatterbox Nano diagnostics unavailable: " + (error.message || String(error)));
+      return null;
+    });
+  }
+
+  function prepareChatterbox(forceRetry) {
+    if (forceRetry) { chatterboxFailure = null; chatterboxReady = false; }
+    if (chatterboxReady) return Promise.resolve();
+    if (chatterboxLoading) return chatterboxLoading;
+    updateChatterboxStatus("Chatterbox Nano: starting | Loading CPU model and authorized local reference...");
+    chatterboxLoading = fetch("/chatterbox/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}"
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (info) {
+        renderChatterboxStatus(info);
+        if (!response.ok || info.state !== "ready") {
+          throw new Error(info.error || "Chatterbox Nano did not become ready");
+        }
+        chatterboxReady = true;
+        chatterboxFailure = null;
+      });
+    }).catch(function (error) {
+      chatterboxReady = false;
+      chatterboxFailure = error;
+      updateChatterboxStatus("Chatterbox Nano: error | " + (error.message || String(error)));
+      throw error;
+    }).finally(function () {
+      chatterboxLoading = null;
+    });
+    return chatterboxLoading;
+  }
+
+  function cancelChatterboxRequest() {
+    var requestId = chatterboxRequestId;
+    chatterboxRequestId = "";
+    if (requestId) {
+      fetch("/chatterbox/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId: requestId }),
+        keepalive: true
+      }).catch(function () {});
+    }
+    if (chatterboxController) {
+      try { chatterboxController.abort(); } catch (e) {}
+      chatterboxController = null;
+    }
+    if (chatterboxAudio) {
+      try { chatterboxAudio.pause(); } catch (e) {}
+      chatterboxAudio = null;
+    }
+    if (chatterboxFinish) {
+      var finish = chatterboxFinish;
+      chatterboxFinish = null;
+      finish();
+    }
+  }
+
+  var chatterboxDriver = {
+    speak: async function (text, preferences, cancelled) {
+      if (!chatterboxReady) {
+        void prepareChatterbox().catch(function () {});
+        throw chatterboxFailure || new Error("Chatterbox Nano is still loading");
+      }
+      if (cancelled && cancelled()) return;
+      if (typeof Audio === "undefined") throw new Error("Browser audio playback is unavailable");
+      var requestId = "c" + Date.now().toString(36) + (++chatterboxRequestN).toString(36);
+      var controller = new AbortController();
+      chatterboxRequestId = requestId;
+      chatterboxController = controller;
+      var response, audioUrl;
+      try {
+        response = await fetch("/chatterbox/synthesize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: text, requestId: requestId }),
+          signal: controller.signal
+        });
+        if (!response.ok) {
+          var failure = await response.text();
+          throw new Error(failure || "Chatterbox synthesis failed (" + response.status + ")");
+        }
+        if ((cancelled && cancelled()) || controller.signal.aborted) return;
+        audioUrl = URL.createObjectURL(await response.blob());
+      } catch (error) {
+        if (chatterboxController === controller) chatterboxController = null;
+        if (chatterboxRequestId === requestId) chatterboxRequestId = "";
+        throw error;
+      }
+      var audio = new Audio(audioUrl);
+      chatterboxAudio = audio;
+      audio.playbackRate = preferences.rate;
+      if ("preservesPitch" in audio) audio.preservesPitch = true;
+      if ("webkitPreservesPitch" in audio) audio.webkitPreservesPitch = true;
+      await new Promise(function (resolve, reject) {
+        var settled = false;
+        function finish(error) {
+          if (settled) return;
+          settled = true;
+          if (chatterboxFinish === finish) chatterboxFinish = null;
+          if (chatterboxAudio === audio) chatterboxAudio = null;
+          if (chatterboxController === controller) chatterboxController = null;
+          if (chatterboxRequestId === requestId) chatterboxRequestId = "";
+          URL.revokeObjectURL(audioUrl);
+          if (error) reject(error); else resolve();
+        }
+        chatterboxFinish = finish;
+        audio.onended = function () { finish(); };
+        audio.onerror = function () { finish(new Error("Chatterbox audio playback failed")); };
+        Promise.resolve(audio.play()).catch(finish);
+      });
+      void refreshChatterboxStatus();
+    },
+    cancel: cancelChatterboxRequest
+  };
+
+  var fallbackNoticeAt = 0;
+  var speechQueue = new SpeechQueue(function (text, cancelled) {
+    return speakWithFallback({
+      engine: ttsPrefs.engine,
+      chatterbox: chatterboxDriver,
+      kokoro: kokoroDriver,
+      browser: browserDriver,
+      text: text,
+      preferences: ttsPrefs,
+      cancelled: cancelled,
+      onFallback: function (error, from, to) {
+        var now = Date.now();
+        if (now - fallbackNoticeAt > 5000) {
+          fallbackNoticeAt = now;
+          if (from === "chatterbox") {
+            toast("Chatterbox Nano unavailable; trying " + (to === "kokoro" ? "Kokoro" : "Browser Speech"));
+          } else {
+            toast(kokoroFailure ? "Kokoro unavailable; using Browser Speech" : "Using Browser Speech while Kokoro loads");
+          }
+        }
+      }
+    });
+  });
   function enqueueSpeak(text) {
     text = (text || "").trim();
-    if (speakMuted || !text || !window.speechSynthesis) return;
-    speakQueue.push(text);
-    if (!speaking) playNext();
-  }
-  function playNext() {
-    if (!speakQueue.length) { speaking = false; settleSpeakDone(); return; }
-    speaking = true;
-    var text = speakQueue.shift();
-    try {
-      var u = new SpeechSynthesisUtterance(text); u.rate = 1.02; u.pitch = 1.0;
-      u.onend = playNext; u.onerror = playNext;
-      window.speechSynthesis.speak(u);
-    } catch (e) { playNext(); }
+    if (!speakMuted && text) speechQueue.enqueue(text);
   }
   function stopSpeaking() {
-    speakQueue.length = 0; speaking = false;
-    try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
-    settleSpeakDone();
+    previewGeneration++;
+    speechQueue.cancel(function () { browserDriver.cancel(); kokoroDriver.cancel(); chatterboxDriver.cancel(); });
+    if (el.previewVoice) el.previewVoice.disabled = false;
   }
   function waitForSpeech() {
-    return new Promise(function (resolve) {
-      if (!speaking && !speakQueue.length) return resolve();
-      speakDoneResolve = resolve;
+    return Promise.all([speechQueue.wait(), waitForKokoroPlayback()]).then(function () {});
+  }
+
+  function previewSelectedVoice() {
+    stopSpeaking();
+    var generation = ++previewGeneration;
+    var preferences = preferencesFromControls();
+    var voice = KOKORO_VOICES[preferences.voice];
+    var sample = preferences.engine === "kokoro" && voice
+      ? "Hi, I'm " + voice.name + "."
+      : preferences.engine === "chatterbox"
+        ? "Hi, this is Vox using your authorized local voice."
+        : "Hi, this is Vox.";
+    ttsPrefs = preferences;
+    renderTtsPreferences();
+    saveTtsPreferences();
+    el.previewVoice.disabled = true;
+    toast(preferences.engine === "kokoro"
+      ? "Preparing Kokoro voice preview..."
+      : preferences.engine === "chatterbox"
+        ? "Preparing Chatterbox Nano preview..."
+        : "Playing voice preview...");
+    var cancelled = function () { return generation !== previewGeneration; };
+    var playback = preferences.engine === "kokoro"
+      ? Promise.all([prepareKokoro(), warmKokoroVoice(preferences.voice)]).then(function () {
+          if (cancelled()) return;
+        return kokoroDriver.speak(sample, preferences, cancelled).then(waitForKokoroPlayback);
+        })
+      : preferences.engine === "chatterbox"
+        ? prepareChatterbox(true).then(function () {
+            if (cancelled()) return;
+            return chatterboxDriver.speak(sample, preferences, cancelled);
+          })
+        : browserDriver.speak(sample, preferences, cancelled);
+    Promise.resolve(playback).then(function () {
+      if (!cancelled()) toast("Voice preview complete");
+    }).catch(function () {
+      if (!cancelled()) toast("Voice preview unavailable");
+    }).finally(function () {
+      if (!cancelled()) el.previewVoice.disabled = false;
     });
   }
 
@@ -795,9 +1259,22 @@ export function renderHtml(instanceId) {
     }
     return -1;
   }
+  function findLocalTtsChunkEnd(s) {
+    var sentenceEnd = findSentenceEnd(s);
+    if (sentenceEnd > -1 && sentenceEnd < 90) return sentenceEnd;
+    if (s.length < 54) return sentenceEnd;
+    var limit = Math.min(s.length - 1, 90);
+    for (var i = 36; i <= limit; i++) {
+      if (s.charAt(i) === "," || s.charAt(i) === ";" || s.charAt(i) === ":" || s.charAt(i) === "\u2014") return i;
+    }
+    for (var j = Math.min(72, limit); j >= 48; j--) {
+      if (/\s/.test(s.charAt(j))) return j;
+    }
+    return sentenceEnd;
+  }
   function flushSentences(buf) {
     var idx, guard = 0;
-    while ((idx = findSentenceEnd(buf)) > -1 && guard++ < 40) {
+    while ((idx = ttsPrefs.engine === "browser" ? findSentenceEnd(buf) : findLocalTtsChunkEnd(buf)) > -1 && guard++ < 40) {
       var s = buf.slice(0, idx + 1).trim();
       if (s) enqueueSpeak(s);
       buf = buf.slice(idx + 1).replace(/^\s+/, "");
@@ -807,7 +1284,14 @@ export function renderHtml(instanceId) {
 
   // barge-in / interrupt: stop talking AND cut the in-flight turn short
   var activeCtrl = null;
-  function bargeCancel() { if (activeCtrl) { try { activeCtrl.abort(); } catch (e) {} } stopSpeaking(); stopListenSpeech(); pendingFinal = ""; clearTimeout(silenceTimer); stopCountdown(); }
+  function bargeCancel() {
+    if (activeCtrl) { try { activeCtrl.abort(); } catch (e) {} }
+    stopSpeaking();
+    var stoppedPassiveReply = stopListenSpeech();
+    pendingFinal = ""; clearTimeout(silenceTimer); stopCountdown();
+    if (stoppedPassiveReply) { goReady(); stopToReady = false; }
+    return stoppedPassiveReply;
+  }
 
   // ---- turn round-trip (streaming) ----
   async function sendTurn(text) {
@@ -931,6 +1415,127 @@ export function renderHtml(instanceId) {
     toastTimer = setTimeout(function () { el.toast.classList.remove("show"); }, 2400);
   }
 
+  function populateKokoroVoices(catalog) {
+    catalog = catalog && typeof catalog === "object" ? catalog : KOKORO_VOICES;
+    var selected = ttsPrefs.voice;
+    el.ttsVoice.innerHTML = "";
+    var groups = groupKokoroVoices(catalog);
+    for (var g = 0; g < groups.length; g++) {
+      var optgroup = document.createElement("optgroup");
+      optgroup.label = groups[g].label;
+      for (var v = 0; v < groups[g].voices.length; v++) {
+        var voice = groups[g].voices[v];
+        var option = document.createElement("option");
+        option.value = voice.id;
+        option.textContent = voice.name + " (" + voice.id + ")" + (voice.grade ? " - " + voice.grade : "");
+        optgroup.appendChild(option);
+      }
+      el.ttsVoice.appendChild(optgroup);
+    }
+    if (Object.prototype.hasOwnProperty.call(catalog, selected)) el.ttsVoice.value = selected;
+    else {
+      ttsPrefs = normalizeTtsPreferences({ ...ttsPrefs, voice: DEFAULT_TTS_PREFERENCES.voice }, catalog);
+      el.ttsVoice.value = ttsPrefs.voice;
+    }
+  }
+
+  function renderTtsPreferences() {
+    el.ttsEngine.value = ttsPrefs.engine;
+    el.ttsVoice.value = ttsPrefs.voice;
+    el.ttsVoice.disabled = ttsPrefs.engine !== "kokoro";
+    el.ttsVoiceLabel.textContent = ttsPrefs.engine === "chatterbox" ? "Kokoro fallback voice" : "Kokoro voice";
+    el.ttsRate.value = String(ttsPrefs.rate);
+    el.ttsPitch.value = String(ttsPrefs.pitchSemitones);
+    el.ttsPitch.disabled = ttsPrefs.engine === "chatterbox";
+    el.ttsRateValue.textContent = ttsPrefs.rate.toFixed(2) + "x";
+    el.ttsPitchValue.textContent = ttsPrefs.engine === "chatterbox"
+      ? "Unavailable"
+      : (ttsPrefs.pitchSemitones > 0 ? "+" : "") + ttsPrefs.pitchSemitones + " st";
+    el.ttsPitchLabel.textContent = ttsPrefs.engine === "chatterbox" ? "Pitch shift (not supported)" : "Pitch shift";
+    el.ttsPitchNote.textContent = ttsPrefs.engine === "chatterbox"
+      ? "Chatterbox Nano does not expose pitch control. Speech rate uses pitch-preserving browser playback when supported."
+      : "Pitch is approximate. Kokoro compensates generation speed before Web Audio pitch shifting so the selected speech rate stays nearly constant.";
+  }
+
+  function preferencesFromControls() {
+    return normalizeTtsPreferences({
+      engine: el.ttsEngine.value,
+      voice: el.ttsVoice.value,
+      rate: el.ttsRate.value,
+      pitchSemitones: el.ttsPitch.value
+    });
+  }
+
+  function saveTtsPreferences() {
+    clearTimeout(preferenceTimer);
+    var revision = preferenceRevision;
+    var preferences = ttsPrefs;
+    preferenceTimer = setTimeout(function () {
+      fetch("/preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(preferences)
+      }).then(function (response) {
+        if (!response.ok) throw new Error("preferences " + response.status);
+        return response.json();
+      }).then(function (saved) {
+        if (revision !== preferenceRevision) return;
+        ttsPrefs = normalizeTtsPreferences(saved);
+        renderTtsPreferences();
+      }).catch(function () {
+        toast("Could not save speech settings");
+      });
+    }, 180);
+  }
+
+  function onTtsPreferenceChanged() {
+    var previousEngine = ttsPrefs.engine;
+    preferenceRevision++;
+    ttsPrefs = preferencesFromControls();
+    renderTtsPreferences();
+    saveTtsPreferences();
+    if (ttsPrefs.engine === "kokoro") {
+      void warmKokoroVoice(ttsPrefs.voice);
+      void prepareKokoro(previousEngine !== "kokoro").catch(function () {});
+    } else if (ttsPrefs.engine === "chatterbox") {
+      void prepareChatterbox(previousEngine !== "chatterbox").catch(function () {});
+      void warmKokoroVoice(ttsPrefs.voice);
+      void prepareKokoro().catch(function () {});
+    }
+  }
+
+  function warmKokoroVoice(voice) {
+    if (!Object.prototype.hasOwnProperty.call(KOKORO_VOICES, voice)) return Promise.resolve();
+    return fetch("/kokoro-cache?path=" + encodeURIComponent("voices/" + voice + ".bin"))
+      .then(function (response) {
+        if (!response.ok) throw new Error("voice cache " + response.status);
+        return response.arrayBuffer();
+      }).then(function () {});
+  }
+
+  function loadTtsPreferences() {
+    var revision = preferenceRevision;
+    populateKokoroVoices(KOKORO_VOICES);
+    return fetch("/preferences").then(function (response) {
+      if (!response.ok) throw new Error("preferences " + response.status);
+      return response.json();
+    }).then(function (saved) {
+      if (revision !== preferenceRevision) return;
+      ttsPrefs = normalizeTtsPreferences(saved);
+      renderTtsPreferences();
+      if (ttsPrefs.engine === "kokoro") void prepareKokoro().catch(function () {});
+      if (ttsPrefs.engine === "chatterbox") {
+        void prepareChatterbox().catch(function () {});
+        void prepareKokoro().catch(function () {});
+      }
+    }).catch(function () {
+      if (revision !== preferenceRevision) return;
+      ttsPrefs = normalizeTtsPreferences();
+      renderTtsPreferences();
+      toast("Using default speech settings");
+    });
+  }
+
   // Backfill the transcript with the selected session's full prior conversation
   // (read from the CLI's own store), then mark where the live turns begin. Called
   // on first load and whenever you switch chats — never on the periodic poll, so
@@ -960,7 +1565,7 @@ export function renderHtml(instanceId) {
   // ---- listen channel: speak assistant replies that come from TYPED CLI turns ----
   // The server pushes {delta}/{done} frames on /listen for any reply NOT initiated
   // by a vox turn, so things you type straight into Copilot are still read aloud.
-  var listenES = null, listenSent = "", listenFull = "", listenActive = false, lastListenSession = null;
+  var listenES = null, listenSent = "", listenFull = "", listenActive = false, listenSuppressed = false, lastListenSession = null;
   function cleanForSpeech(s) {
     return String(s)
       .replace(/[*_#>\u0060]/g, "")
@@ -968,16 +1573,25 @@ export function renderHtml(instanceId) {
       .replace(/\\s+/g, " ")
       .trim();
   }
-  function stopListenSpeech() { listenSent = ""; listenFull = ""; listenActive = false; }
+  function stopListenSpeech() {
+    var stopped = listenActive;
+    listenSuppressed = listenSuppressed || listenActive;
+    listenSent = ""; listenFull = ""; listenActive = false;
+    return stopped;
+  }
   function flushListen() {
     var idx, guard = 0;
-    while ((idx = findSentenceEnd(listenSent)) > -1 && guard++ < 60) {
+    while ((idx = ttsPrefs.engine === "browser" ? findSentenceEnd(listenSent) : findLocalTtsChunkEnd(listenSent)) > -1 && guard++ < 60) {
       var s = listenSent.slice(0, idx + 1).trim();
       if (s) { var c = cleanForSpeech(s); if (c) enqueueSpeak(c); }
       listenSent = listenSent.slice(idx + 1).replace(/^\\s+/, "");
     }
   }
   function onListenMsg(msg) {
+    if (listenSuppressed) {
+      if (msg.done) listenSuppressed = false;
+      return;
+    }
     if (busy) return;                 // a vox turn owns the UI/audio (server also suppresses)
     if (state === "listening") return; // don't trample a turn you're in the middle of speaking
     if (msg.delta) {
@@ -998,10 +1612,12 @@ export function renderHtml(instanceId) {
   function connectListen() {
     if (typeof EventSource === "undefined") return;
     try { if (listenES) listenES.close(); } catch (e) {}
+    listenSuppressed = false;
     var sid = el.sessSel.value || "";
     lastListenSession = sid;
     try {
       listenES = new EventSource("/listen?session=" + encodeURIComponent(sid));
+      listenES.onopen = function () { listenSuppressed = false; };
       listenES.onmessage = function (e) {
         var msg; try { msg = JSON.parse(e.data); } catch (_) { return; }
         onListenMsg(msg);
@@ -1028,7 +1644,7 @@ export function renderHtml(instanceId) {
     if (!live && state === "idle") { startLive(); return; }
     if (state === "ready") { startListening(); return; }
     if (state === "listening") { sendCaptured(); return; }
-    if (state === "thinking" || state === "speaking") { bargeCancel(); return; }
+    if (state === "thinking" || state === "speaking") { if (bargeCancel()) startListening(); return; }
   }
   el.orbWrap.addEventListener("click", orbTap);
   el.end.addEventListener("click", stopLive);
@@ -1064,23 +1680,27 @@ export function renderHtml(instanceId) {
     startListening();
   });
   setTimeout(clearBoot, 1600);
-  autoStart();
+  loadTtsPreferences().finally(function () { autoStart(); });
   refreshSessions().then(function () { connectListen(); loadHistory(el.sessSel.value); });
   setInterval(function () {
     refreshSessions().then(function () {
       if ((el.sessSel.value || "") !== lastListenSession) connectListen();
     });
   }, 3000);
+  void refreshChatterboxStatus();
+  setInterval(function () {
+    if (ttsPrefs.engine === "chatterbox" || chatterboxLoading) void refreshChatterboxStatus();
+  }, 2500);
   el.spk.addEventListener("click", function () {
     speakMuted = !speakMuted; el.spk.classList.toggle("off", speakMuted);
     el.spk.innerHTML = speakMuted ? "&#x1F507;" : "&#x1F50A;";
     el.spk.setAttribute("data-tip", speakMuted ? "Unmute voice" : "Mute voice");
     el.spk.setAttribute("aria-label", speakMuted ? "Unmute voice" : "Mute voice");
-    if (speakMuted && window.speechSynthesis) window.speechSynthesis.cancel();
+    if (speakMuted) stopSpeaking();
   });
 
   // Clear interrupt / barge-in: stop the reply and cut the in-flight turn.
-  el.interrupt.addEventListener("click", function () { bargeCancel(); });
+  el.interrupt.addEventListener("click", function () { if (bargeCancel()) startListening(); });
   // Transcript panel: toggle open/closed and clear.
   el.logBtn.addEventListener("click", function () {
     var open = el.log.getAttribute("data-open") === "true";
@@ -1091,6 +1711,17 @@ export function renderHtml(instanceId) {
     if (el.logEmpty) { el.logBody.appendChild(el.logEmpty); el.logEmpty.style.display = ""; }
   });
   el.logClose.addEventListener("click", function () { el.log.setAttribute("data-open", "false"); });
+  el.settingsBtn.addEventListener("click", function () {
+    var open = el.settings.getAttribute("data-open") === "true";
+    el.settings.setAttribute("data-open", open ? "false" : "true");
+    if (!open) void refreshChatterboxStatus();
+  });
+  el.settingsClose.addEventListener("click", function () { el.settings.setAttribute("data-open", "false"); });
+  el.ttsEngine.addEventListener("change", onTtsPreferenceChanged);
+  el.ttsVoice.addEventListener("change", onTtsPreferenceChanged);
+  el.ttsRate.addEventListener("input", onTtsPreferenceChanged);
+  el.ttsPitch.addEventListener("input", onTtsPreferenceChanged);
+  el.previewVoice.addEventListener("click", previewSelectedVoice);
 
   // ---- keyboard shortcuts: Space = talk / send, Esc = interrupt / stop ----
   document.addEventListener("keydown", function (e) {
@@ -1101,15 +1732,20 @@ export function renderHtml(instanceId) {
       if (!live && state === "idle") { startLive(); return; }
       if (state === "ready") { startListening(); return; }
       if (state === "listening") { sendCaptured(); return; }
-      if (state === "thinking" || state === "speaking") { bargeCancel(); return; }
+      if (state === "thinking" || state === "speaking") { if (bargeCancel()) startListening(); return; }
     } else if (e.key === "Escape" || e.key === "Esc") {
       if (state === "listening") { stopCapture(); goReady(); return; }
-      if (state === "thinking" || state === "speaking") { bargeCancel(); return; }
+      if (state === "thinking" || state === "speaking") { if (bargeCancel()) startListening(); return; }
     }
   });
 
   if (!SR) el.hint.textContent = "Speech recognition isn't supported in this browser.";
-  window.addEventListener("pagehide", stopLive);
+  window.addEventListener("pagehide", function () {
+    stopLive();
+    chatterboxDriver.cancel();
+    if (kokoroWorker) { try { kokoroWorker.terminate(); } catch (e) {} kokoroWorker = null; }
+    if (ttsAudioCtx) { try { ttsAudioCtx.close(); } catch (e) {} ttsAudioCtx = null; }
+  });
 })();
 </script>
 </body>

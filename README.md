@@ -47,6 +47,12 @@ like `/vox` stay CLI-only.
 - **Live captions** — your speech streams in as interim text and commits as you go.
 - **Speaks your typed replies too** — type directly into the Copilot CLI (not just
   voice) and Vox reads the assistant's reply aloud in the panel.
+- **Browser Speech or Kokoro** — choose the built-in browser voice for instant,
+  low-resource speech or lazily load the official Kokoro 82M model for higher
+  quality local inference. Browser Speech remains the automatic fallback.
+- **Voice, rate, and pitch controls** — Vox persists the selected engine, every
+  voice supported by the official Kokoro JavaScript runtime, speech rate, and an
+  approximate semitone pitch shift.
 - **Transcript panel** — open the 📜 panel to read the full back-and-forth; close
   or clear it anytime.
 - **Session routing + auto-switch** — the centered dropdown shows each live session;
@@ -116,6 +122,118 @@ From a local clone:
 ./setup.sh             # macOS/Linux: copy into ~/.copilot/extensions/vox
 ```
 
+No package install or build step is required for Browser Speech or Kokoro.
+Kokoro is downloaded only if you select it in **Speech settings**.
+
+## Speech engines and controls
+
+Open the gear button in the Vox toolbar to choose an engine and adjust speech.
+Settings are shared across Vox sessions in
+`~/.copilot/vox-preferences.json` (under the existing Copilot home, never
+OneDrive).
+
+### Browser Speech
+
+Browser Speech is the default and uses the browser's
+`SpeechSynthesisUtterance`. Vox applies the selected `rate` and `pitch`
+directly. It starts immediately, uses the browser's system voice, and remains
+the fallback whenever Kokoro is loading or cannot synthesize a sentence.
+
+### Kokoro
+
+Vox pins the official Apache-2.0
+[`kokoro-js` 1.2.1](https://github.com/hexgrad/kokoro/tree/main/kokoro.js)
+runtime and runs the
+[`onnx-community/Kokoro-82M-v1.0-ONNX`](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX)
+model locally in the browser. Inference defaults to deterministic **WASM q8**;
+WebGPU is not enabled because browser/GPU driver combinations can corrupt audio.
+
+The first Kokoro selection downloads the q8 model (about **88 MiB**), tokenizer,
+runtime/WASM files, and the selected voice data (about **510 KiB per voice**).
+The shared Vox front process stores those files in
+`~/.copilot/vox-kokoro-cache` for later sessions, independent of the browser
+profile or Copilot app canvas cache. Vox does not bundle model weights or voice
+binaries, and deleting this directory causes a download on the next use.
+
+The official JavaScript runtime currently supports this complete 28-voice
+English catalog. Vox reads `tts.voices` after model load so the runtime remains
+authoritative:
+
+| Group | Voices |
+|-------|--------|
+| American English — Female | Heart (`af_heart`, default), Alloy (`af_alloy`), Aoede (`af_aoede`), Bella (`af_bella`), Jessica (`af_jessica`), Kore (`af_kore`), Nicole (`af_nicole`), Nova (`af_nova`), River (`af_river`), Sarah (`af_sarah`), Sky (`af_sky`) |
+| American English — Male | Adam (`am_adam`), Echo (`am_echo`), Eric (`am_eric`), Fenrir (`am_fenrir`), Liam (`am_liam`), Michael (`am_michael`), Onyx (`am_onyx`), Puck (`am_puck`), Santa (`am_santa`) |
+| British English — Female | Alice (`bf_alice`), Emma (`bf_emma`), Isabella (`bf_isabella`), Lily (`bf_lily`) |
+| British English — Male | Daniel (`bm_daniel`), Fable (`bm_fable`), George (`bm_george`), Lewis (`bm_lewis`) |
+
+Kokoro has no native pitch control. Vox creates each generated buffer at its
+actual **24 kHz** sample rate inside a device-native `AudioContext`, allowing
+Web Audio to resample safely. It applies
+`pitchRatio = 2^(semitones/12)` during playback and generates at
+`rate / pitchRatio`, which keeps the requested overall speech rate
+approximately stable while shifting pitch. This is a resampling-based,
+approximate pitch effect rather than formant-preserving DSP.
+
+Kokoro works best on a current Chromium browser with WebAssembly, several
+hundred MiB of available memory, and enough local cache space for the model.
+The initial model load can take from seconds to minutes depending on hardware
+and network speed; Vox speaks with Browser Speech during that time.
+
+### Chatterbox Nano (optional, Windows CPU)
+
+Chatterbox Nano provides local CPU voice cloning with a reference WAV that you
+are authorized to use. Its Python and model dependencies are large, so they are
+never installed automatically when Vox loads. Python 3.11 is recommended.
+
+From a PowerShell prompt in the Vox checkout:
+
+```powershell
+.\setup.ps1 `
+  -InstallChatterbox `
+  -ReferenceAudio "C:\path\to\your-authorized-reference.wav"
+```
+
+This copies the reference to
+`~/.copilot/vox-chatterbox/voices/authorized-reference.wav`, creates a virtual
+environment under `~/.copilot/vox-chatterbox/.venv`, installs
+`chatterbox-tts==0.1.7` only from Microsoft's approved internal Python proxy,
+and writes validated local settings to
+`~/.copilot/vox-chatterbox/config.json`. Model weights and generated data use
+`~/.copilot/vox-chatterbox/cache`. Vox never commits or uploads the reference,
+local JSON, environment, generated audio, or weights.
+
+Every user must supply a local reference they are authorized to clone. A
+personal reference must never be redistributed or made a project/default
+asset.
+
+Vox starts one dependency-light Python sidecar on an ephemeral `127.0.0.1`
+port. It loads
+`ChatterboxTurboTTS.from_pretrained(device="cpu", nano=True)` once and prepares
+the reference conditioning once, then reuses the model across canvas reloads
+while the shared Vox front process remains alive. The settings panel shows
+starting/ready/error state, the validated local reference path, and the latest
+synthesis latency.
+
+Preview and normal playback honor the selected rate through pitch-preserving
+browser playback. Chatterbox Nano has no pitch control, so pitch is labeled
+unsupported and disabled for this engine. If startup or synthesis fails, Vox
+falls back to Kokoro and then Browser Speech.
+
+Mute and barge-in stop browser playback immediately and mark any in-flight
+sidecar response for discard. An already-running Torch generation is not
+forcibly terminated because doing so would unload the model; ordered playback
+continues after that generation finishes. The sidecar is explicitly stopped
+when the shared Vox front process shuts down.
+
+Chatterbox-generated audio includes Resemble AI's imperceptible PerTh
+watermark. Vox does not vendor model weights. See
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) for software, model, and
+reference-use notices.
+
+`setup.sh` deploys the sidecar source so the extension layout is complete, but
+automatic Chatterbox dependency setup is currently supported only by
+`setup.ps1` on Windows.
+
 ## Uninstall
 
 ```powershell
@@ -129,8 +247,8 @@ From a local clone:
 ## How it works
 
 A `/vox` command spins up a small local server on port `4321` and registers the
-session in `registry.json`. The browser canvas streams microphone audio in and
-plays synthesized replies out, routing spoken turns to the active session. A
+session in `registry.json`. The browser canvas streams microphone audio in and plays synthesized replies
+through Browser Speech or Kokoro, routing spoken turns to the active session. A
 persistent `/listen` channel also streams replies from **typed** CLI turns to the
 panel so they're spoken too.
 
@@ -148,3 +266,7 @@ identity and remembers the mic permission. Override the browser with
 ## License
 
 Licensed under the [MIT License](LICENSE).
+
+Kokoro-related third-party attribution is in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), with the Apache-2.0 license
+text under [`LICENSES/`](LICENSES/Apache-2.0.txt).

@@ -2,3 +2,5 @@ node_modules/
 registry.json
 *.log
 .DS_Store
+__pycache__/
+*.py[cod]

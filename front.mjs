@@ -1,6 +1,11 @@
 import http from "node:http";
-import { PUBLIC_PORT } from "./config.mjs";
+import { createReadStream } from "node:fs";
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { DIR, KOKORO_CACHE, PUBLIC_PORT } from "./config.mjs";
+import { createChatterboxManager } from "./chatterbox-manager.mjs";
 import { listen, readBody } from "./http-util.mjs";
+import { readTtsPreferences, writeTtsPreferences } from "./preferences.mjs";
 import * as registry from "./registry.mjs";
 import { readHistory } from "./store.mjs";
 
@@ -8,8 +13,52 @@ import { readHistory } from "./store.mjs";
 // records the first value it sees and reloads itself when it changes, so an open app
 // window always ends up running the freshly served JS instead of stale code.
 const BOOT = Date.now();
+const TTS_CORE_SOURCE = readFile(join(DIR, "tts-core.mjs"), "utf8");
+const KOKORO_WORKER_SOURCE = readFile(join(DIR, "kokoro-worker.mjs"), "utf8");
+const KOKORO_HF_BASE = "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/";
+const cacheDownloads = new Map();
+
+function safeKokoroPath(value) {
+    const path = String(value || "").replaceAll("\\", "/");
+    if (!path || path.startsWith("/") || path.split("/").includes("..") || !/^[A-Za-z0-9._/-]+$/.test(path)) {
+        throw new Error("invalid Kokoro asset path");
+    }
+    return path;
+}
+
+async function ensureKokoroAsset(relativePath) {
+    const target = join(KOKORO_CACHE, ...relativePath.split("/"));
+    try {
+        await stat(target);
+        return target;
+    } catch {}
+    if (cacheDownloads.has(relativePath)) return cacheDownloads.get(relativePath);
+    const download = (async () => {
+        await mkdir(dirname(target), { recursive: true });
+        const response = await fetch(`${KOKORO_HF_BASE}${relativePath}`);
+        if (!response.ok) throw new Error(`Kokoro asset download failed (${response.status})`);
+        const temporary = `${target}.${process.pid}.${Date.now()}.tmp`;
+        await writeFile(temporary, new Uint8Array(await response.arrayBuffer()));
+        await rename(temporary, target);
+        return target;
+    })().finally(() => cacheDownloads.delete(relativePath));
+    cacheDownloads.set(relativePath, download);
+    return download;
+}
+
+async function serveKokoroAsset(relativePath, res) {
+    const path = await ensureKokoroAsset(safeKokoroPath(relativePath));
+    const info = await stat(path);
+    res.writeHead(200, {
+        "Content-Type": path.endsWith(".json") ? "application/json" : "application/octet-stream",
+        "Content-Length": info.size,
+        "Cache-Control": "public, max-age=31536000, immutable",
+    });
+    createReadStream(path).pipe(res);
+}
 
 function sendJson(res, status, obj) {
+    if (res.destroyed || res.writableEnded) return;
     res.writeHead(status, { "Content-Type": "application/json" });
     res.end(JSON.stringify(obj));
 }
@@ -72,6 +121,7 @@ function pipeListen(session, res) {
 
 export async function ensureFront({ selfId, selfInternalPort, servePage, localTurn, localListen }) {
     if (registry.isFrontAlive()) return { hosting: false };
+    const chatterbox = createChatterboxManager();
 
     const server = http.createServer(async (req, res) => {
         try {
@@ -79,6 +129,81 @@ export async function ensureFront({ selfId, selfInternalPort, servePage, localTu
 
             if (req.method === "GET" && url.pathname === "/") {
                 servePage(res);
+                return;
+            }
+
+            if (req.method === "GET" && url.pathname === "/tts-core.mjs") {
+                res.writeHead(200, {
+                    "Content-Type": "text/javascript; charset=utf-8",
+                    "Cache-Control": "no-cache",
+                });
+                res.end(await TTS_CORE_SOURCE);
+                return;
+            }
+
+            if (req.method === "GET" && url.pathname === "/kokoro-worker.mjs") {
+                res.writeHead(200, {
+                    "Content-Type": "text/javascript; charset=utf-8",
+                    "Cache-Control": "no-cache",
+                });
+                res.end(await KOKORO_WORKER_SOURCE);
+                return;
+            }
+
+            if (req.method === "GET" && url.pathname === "/kokoro-cache") {
+                await serveKokoroAsset(url.searchParams.get("path"), res);
+                return;
+            }
+
+            if (req.method === "GET" && url.pathname === "/preferences") {
+                sendJson(res, 200, await readTtsPreferences());
+                return;
+            }
+
+            if (req.method === "POST" && url.pathname === "/preferences") {
+                sendJson(res, 200, await writeTtsPreferences(await readJson(req)));
+                return;
+            }
+
+            if (req.method === "GET" && url.pathname === "/chatterbox/status") {
+                sendJson(res, 200, chatterbox.status());
+                return;
+            }
+
+            if (req.method === "POST" && url.pathname === "/chatterbox/start") {
+                try {
+                    sendJson(res, 200, await chatterbox.start());
+                } catch (error) {
+                    sendJson(res, 503, { ...chatterbox.status(), error: error?.message || String(error) });
+                }
+                return;
+            }
+
+            if (req.method === "POST" && url.pathname === "/chatterbox/cancel") {
+                const body = await readJson(req);
+                await chatterbox.cancel(String(body.requestId || ""));
+                sendJson(res, 200, { canceled: true });
+                return;
+            }
+
+            if (req.method === "POST" && url.pathname === "/chatterbox/synthesize") {
+                const body = await readJson(req);
+                const controller = new AbortController();
+                const abort = () => controller.abort(new Error("client disconnected"));
+                req.once("aborted", abort);
+                res.once("close", () => {
+                    if (!res.writableEnded) abort();
+                });
+                const result = await chatterbox.synthesize(body, controller.signal);
+                if (controller.signal.aborted || res.destroyed) return;
+                res.writeHead(200, {
+                    "Content-Type": "audio/wav",
+                    "Content-Length": result.audio.length,
+                    "X-Vox-Synthesis-Ms": result.synthesisMs ?? "",
+                    "X-Vox-Response-Ms": result.responseMs ?? "",
+                    "Cache-Control": "no-store",
+                });
+                res.end(result.audio);
                 return;
             }
 
@@ -154,9 +279,10 @@ export async function ensureFront({ selfId, selfInternalPort, servePage, localTu
     }
 
     registry.setFront(process.pid);
-    return { server, hosting: true };
+    return { server, hosting: true, chatterbox };
 }
 
 export function closeFront(state) {
+    state?.chatterbox?.close();
     state?.server?.close();
 }

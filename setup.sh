@@ -17,6 +17,12 @@ mkdir -p "$DEST"
 rm -f "$DEST/registry.json"   # drop stale runtime state
 cp "$HERE"/*.mjs "$DEST"/
 echo "Copied   : *.mjs -> $DEST"
+cp "$HERE/chatterbox-sidecar.py" "$DEST"/
+echo "Copied   : chatterbox-sidecar.py -> $DEST"
+cp "$HERE/THIRD-PARTY-NOTICES.md" "$DEST"/
+rm -rf "$DEST/LICENSES"
+cp -R "$HERE/LICENSES" "$DEST/LICENSES"
+echo "Copied   : third-party notices -> $DEST"
 
 echo
 echo "== Done =="
