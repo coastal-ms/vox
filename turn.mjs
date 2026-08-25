@@ -1,6 +1,6 @@
 import { sse } from "./http-util.mjs";
 
-const VOICE_PROMPT = "[Vox voice mode] You are in a real-time spoken conversation. The user is talking to you through a microphone, and your reply is read aloud by text-to-speech. Reply in 1-2 very short, natural spoken sentences, ideally under 12 words each — no markdown, lists, headings, or code blocks.\n\nUser said: ";
+const VOICE_PROMPT = "[Vox voice mode] You are in a real-time spoken conversation. The user is talking to you through a microphone, and your reply is read aloud by text-to-speech. Reply in 1-3 short, natural spoken sentences — no markdown, lists, headings, or code blocks.\n\nUser said: ";
 
 // Tracks in-flight vox turns. While > 0, the passive /listen broadcaster stays
 // quiet, because the vox turn already streams its reply to the browser via /turn.
@@ -48,7 +48,6 @@ export async function streamTurn(session, text, res) {
     let finished = false;
     let gotText = false;
     let deltaSeen = false;
-    const commentaryMessages = new Set();
 
     voxTurn.n++; // suppress the passive broadcaster while this vox turn streams
 
@@ -74,13 +73,10 @@ export async function streamTurn(session, text, res) {
         subscribe(session, "assistant.turn_start", () => {
             deltaSeen = false;
         }),
-        subscribe(session, "assistant.message_start", (ev) => {
+        subscribe(session, "assistant.message_start", () => {
             deltaSeen = false;
-            const messageId = ev?.data?.messageId;
-            if (messageId && ev?.data?.phase === "commentary") commentaryMessages.add(messageId);
         }),
         subscribe(session, "assistant.message_delta", (ev) => {
-            if (commentaryMessages.has(ev?.data?.messageId)) return;
             const delta = eventDelta(ev);
             if (!delta) return;
             gotText = true;
@@ -88,11 +84,6 @@ export async function streamTurn(session, text, res) {
             emit({ delta });
         }),
         subscribe(session, "assistant.message", (ev) => {
-            if (ev?.data?.phase === "commentary" || commentaryMessages.has(ev?.data?.messageId)) {
-                commentaryMessages.delete(ev?.data?.messageId);
-                deltaSeen = false;
-                return;
-            }
             if (!deltaSeen) {
                 const delta = extractReply(ev);
                 if (delta) {
@@ -109,7 +100,7 @@ export async function streamTurn(session, text, res) {
     );
 
     try {
-        await session.sendAndWait({ prompt, displayPrompt: said });
+        await session.sendAndWait({ prompt });
         finish();
     } catch (err) {
         finish({ error: err?.message || String(err) });

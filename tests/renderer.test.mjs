@@ -32,4 +32,5 @@ test("renders a parseable browser module with speech settings", () => {
     assert.match(html, /fetch\("\/sapi\/speak"/);
     assert.match(html, /fetch\("\/sapi\/cancel"/);
     assert.match(html, /ttsPitch\.disabled = ttsPrefs\.engine === "chatterbox" \|\| ttsPrefs\.engine === "sapi"/);
+    assert.match(html, /if \(previousEngine !== ttsPrefs\.engine\) stopSpeaking\(\);/);
 });

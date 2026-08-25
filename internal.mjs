@@ -14,7 +14,6 @@ export async function startInternal({ session }) {
     // (vox turns are streamed to the browser via /turn instead — see voxTurn).
     const clients = new Set();
     let deltaSeen = false;
-    const commentaryMessages = new Set();
 
     const broadcast = (obj) => {
         const frame = `data: ${JSON.stringify(obj)}\n\n`;
@@ -22,13 +21,8 @@ export async function startInternal({ session }) {
     };
 
     const unsubs = [
-        subscribe(session, "assistant.message_start", (ev) => {
-            const messageId = ev?.data?.messageId;
-            if (messageId && ev?.data?.phase === "commentary") commentaryMessages.add(messageId);
-        }),
         subscribe(session, "assistant.message_delta", (ev) => {
             if (voxTurn.n > 0 || !clients.size) return;
-            if (commentaryMessages.has(ev?.data?.messageId)) return;
             const delta = eventDelta(ev);
             if (!delta) return;
             deltaSeen = true;
@@ -36,11 +30,6 @@ export async function startInternal({ session }) {
         }),
         subscribe(session, "assistant.message", (ev) => {
             if (voxTurn.n > 0 || !clients.size) { deltaSeen = false; return; }
-            if (ev?.data?.phase === "commentary" || commentaryMessages.has(ev?.data?.messageId)) {
-                commentaryMessages.delete(ev?.data?.messageId);
-                deltaSeen = false;
-                return;
-            }
             if (!deltaSeen) {
                 const delta = extractReply(ev);
                 if (delta) broadcast({ delta });

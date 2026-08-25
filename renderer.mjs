@@ -1621,6 +1621,7 @@ import {
     var previousEngine = ttsPrefs.engine;
     preferenceRevision++;
     ttsPrefs = preferencesFromControls();
+    if (previousEngine !== ttsPrefs.engine) stopSpeaking();
     renderTtsPreferences();
     saveTtsPreferences();
     if (ttsPrefs.engine === "kokoro") {
