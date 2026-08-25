@@ -27,6 +27,10 @@ Vox can optionally use the `chatterbox-tts` Python package and download the
 model weights, and voice reference audio are not bundled or distributed with
 Vox. They remain in the user's local Chatterbox directory.
 
+The Windows setup resolves the package dependency graph from Microsoft's
+internal Python proxy, then installs Nano-capable Chatterbox source pinned to
+official upstream commit `5de7a54aa4e5e2baadb0182dde554908b48b85c2`.
+
 Copyright (c) 2025 Resemble AI.
 
 Chatterbox source code and the Chatterbox Nano model are licensed under the MIT

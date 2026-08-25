@@ -103,7 +103,10 @@ def configure_cache(cache: Path) -> None:
 def watch_parent_pipe() -> None:
     """Exit if the owning Node front process disappears without cleanup."""
     try:
-        sys.stdin.buffer.read()
+        while os.read(sys.stdin.fileno(), 1):
+            pass
+    except (OSError, ValueError):
+        pass
     finally:
         os._exit(0)
 

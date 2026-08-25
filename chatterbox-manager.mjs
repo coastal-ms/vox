@@ -4,7 +4,7 @@ import { createInterface } from "node:readline";
 import { CHATTERBOX_SIDECAR_FILE, CHATTERBOX_VOICES_DIR } from "./config.mjs";
 import { readChatterboxConfig } from "./chatterbox-config.mjs";
 
-const STARTUP_TIMEOUT_MS = 10 * 60 * 1000;
+const STARTUP_TIMEOUT_MS = 30 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 3 * 60 * 1000;
 
 function messageOf(error) {

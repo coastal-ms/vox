@@ -35,6 +35,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
+$packageProxy = 'https://packagefeedproxy.microsoft.io/pypi/simple/'
+$chatterboxSourceCommit = '5de7a54aa4e5e2baadb0182dde554908b48b85c2'
 
 Write-Host "== Vox installer ==" -ForegroundColor Cyan
 
@@ -70,10 +72,11 @@ if ($InstallChatterbox -or $ChatterboxReferenceWav) {
     $chatterboxRoot = Join-Path $env:USERPROFILE '.copilot\vox-chatterbox'
     $voicesDir = Join-Path $chatterboxRoot 'voices'
     $cacheDir = Join-Path $chatterboxRoot 'cache'
+    $pipCacheDir = Join-Path $chatterboxRoot 'pip-cache'
     $venvDir = Join-Path $chatterboxRoot '.venv'
     $referenceDest = Join-Path $voicesDir 'authorized-reference.wav'
     $pythonExe = Join-Path $venvDir 'Scripts\python.exe'
-    New-Item -ItemType Directory -Force -Path $voicesDir, $cacheDir | Out-Null
+    New-Item -ItemType Directory -Force -Path $voicesDir, $cacheDir, $pipCacheDir | Out-Null
     Copy-Item -LiteralPath $sourceReference -Destination $referenceDest -Force
     Write-Host "Copied   : authorized local reference -> $referenceDest"
 
@@ -86,11 +89,24 @@ if ($InstallChatterbox -or $ChatterboxReferenceWav) {
             & $basePython.Source -m venv $venvDir
             if ($LASTEXITCODE -ne 0) { throw 'Failed to create the Chatterbox virtual environment.' }
         }
+        # The internal 0.1.7 wheel supplies the dependency graph, while the
+        # pinned upstream source contains the Nano selector added after that
+        # wheel was published. No dependency is resolved from public PyPI.
         & $pythonExe -m pip install --disable-pip-version-check `
-            --index-url 'https://packagefeedproxy.microsoft.io/pypi/simple/' `
+            --cache-dir $pipCacheDir `
+            --index-url $packageProxy `
             'chatterbox-tts==0.1.7'
         if ($LASTEXITCODE -ne 0) {
             throw 'Chatterbox dependency installation failed through the approved Microsoft package proxy.'
+        }
+        & $pythonExe -m pip install --disable-pip-version-check `
+            --cache-dir $pipCacheDir `
+            --index-url $packageProxy `
+            --no-deps `
+            --force-reinstall `
+            "git+https://github.com/resemble-ai/chatterbox.git@$chatterboxSourceCommit"
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Chatterbox Nano source installation failed from the pinned official GitHub commit.'
         }
     }
 

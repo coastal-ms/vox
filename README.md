@@ -196,11 +196,14 @@ From a PowerShell prompt in the Vox checkout:
 This copies the reference to
 `~/.copilot/vox-chatterbox/voices/authorized-reference.wav`, creates a virtual
 environment under `~/.copilot/vox-chatterbox/.venv`, installs
-`chatterbox-tts==0.1.7` only from Microsoft's approved internal Python proxy,
-and writes validated local settings to
+the `chatterbox-tts==0.1.7` dependency graph only from Microsoft's approved
+internal Python proxy, then installs the Nano-capable package source from a
+pinned commit in Resemble AI's official GitHub repository. It writes validated
+local settings to
 `~/.copilot/vox-chatterbox/config.json`. Model weights and generated data use
-`~/.copilot/vox-chatterbox/cache`. Vox never commits or uploads the reference,
-local JSON, environment, generated audio, or weights.
+`~/.copilot/vox-chatterbox/cache`, and pip's download cache stays under
+`~/.copilot/vox-chatterbox/pip-cache`. Vox never commits or uploads the
+reference, local JSON, environment, generated audio, or weights.
 
 Every user must supply a local reference they are authorized to clone. A
 personal reference must never be redistributed or made a project/default
@@ -212,7 +215,8 @@ port. It loads
 the reference conditioning once, then reuses the model across canvas reloads
 while the shared Vox front process remains alive. The settings panel shows
 starting/ready/error state, the validated local reference path, and the latest
-synthesis latency.
+synthesis latency. The first start can take longer while Hugging Face downloads
+the model into the local cache; subsequent starts reuse those files.
 
 Preview and normal playback honor the selected rate through pitch-preserving
 browser playback. Chatterbox Nano has no pitch control, so pitch is labeled
