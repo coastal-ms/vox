@@ -21,16 +21,24 @@ const OFFICIAL_SUPPORTED_IDS = [
 test("normalizes persisted preferences and rejects unknown catalog entries", () => {
     assert.deepEqual(normalizeTtsPreferences({
         engine: "kokoro",
+        browserVoice: "Microsoft Aria Online (Natural) - English (United States)",
         voice: "bf_emma",
         rate: 9,
         pitchSemitones: -99,
     }), {
         engine: "kokoro",
+        browserVoice: "Microsoft Aria Online (Natural) - English (United States)",
         voice: "bf_emma",
         rate: 2,
         pitchSemitones: -12,
     });
     assert.deepEqual(normalizeTtsPreferences({ engine: "other", voice: "missing" }), DEFAULT_TTS_PREFERENCES);
+});
+
+test("normalizes persisted Browser Speech voice identifiers", () => {
+    assert.equal(normalizeTtsPreferences({ browserVoice: "voice-uri" }).browserVoice, "voice-uri");
+    assert.equal(normalizeTtsPreferences({ browserVoice: 42 }).browserVoice, "");
+    assert.equal(normalizeTtsPreferences({ browserVoice: "x".repeat(501) }).browserVoice.length, 500);
 });
 
 test("catalog matches every voice exposed by official kokoro-js 1.2.1", () => {

@@ -453,6 +453,10 @@ export function renderHtml(instanceId) {
         <label id="ttsVoiceLabel" for="ttsVoice">Kokoro voice</label>
         <select id="ttsVoice"></select>
       </div>
+      <div id="browserVoiceField" class="field">
+        <label for="browserVoice">Windows voice</label>
+        <select id="browserVoice"><option value="">System default</option></select>
+      </div>
       <div class="field">
         <label for="ttsRate">Speech rate</label>
         <div class="range-row"><input id="ttsRate" type="range" min="0.5" max="2" step="0.05" /><span id="ttsRateValue" class="range-value"></span></div>
@@ -522,6 +526,8 @@ import {
     ttsEngine: document.getElementById("ttsEngine"),
     ttsVoiceLabel: document.getElementById("ttsVoiceLabel"),
     ttsVoice: document.getElementById("ttsVoice"),
+    browserVoiceField: document.getElementById("browserVoiceField"),
+    browserVoice: document.getElementById("browserVoice"),
     ttsRate: document.getElementById("ttsRate"),
     ttsRateValue: document.getElementById("ttsRateValue"),
     ttsPitch: document.getElementById("ttsPitch"),
@@ -852,6 +858,12 @@ import {
           var u = new SpeechSynthesisUtterance(text);
           u.rate = preferences.rate;
           u.pitch = pitchRatioFromSemitones(preferences.pitchSemitones);
+          if (preferences.browserVoice) {
+            var voices = window.speechSynthesis.getVoices();
+            for (var i = 0; i < voices.length; i++) {
+              if (voices[i].voiceURI === preferences.browserVoice) { u.voice = voices[i]; break; }
+            }
+          }
           u.onend = function () { if (browserUtterance === u) browserUtterance = null; resolve(); };
           u.onerror = function () { if (browserUtterance === u) browserUtterance = null; resolve(); };
           browserUtterance = u;
@@ -1439,8 +1451,27 @@ import {
     }
   }
 
+  function populateBrowserVoices() {
+    if (!window.speechSynthesis || !el.browserVoice) return;
+    var selected = ttsPrefs.browserVoice;
+    var voices = window.speechSynthesis.getVoices().slice().sort(function (a, b) {
+      return (a.lang + " " + a.name).localeCompare(b.lang + " " + b.name);
+    });
+    el.browserVoice.innerHTML = '<option value="">System default</option>';
+    for (var i = 0; i < voices.length; i++) {
+      var option = document.createElement("option");
+      option.value = voices[i].voiceURI;
+      option.textContent = voices[i].name + " (" + voices[i].lang + ")";
+      el.browserVoice.appendChild(option);
+    }
+    el.browserVoice.value = voices.some(function (voice) { return voice.voiceURI === selected; }) ? selected : "";
+  }
+
   function renderTtsPreferences() {
     el.ttsEngine.value = ttsPrefs.engine;
+    el.browserVoice.value = ttsPrefs.browserVoice;
+    el.browserVoiceField.hidden = ttsPrefs.engine !== "browser";
+    el.browserVoice.disabled = ttsPrefs.engine !== "browser";
     el.ttsVoice.value = ttsPrefs.voice;
     el.ttsVoice.disabled = ttsPrefs.engine !== "kokoro";
     el.ttsVoiceLabel.textContent = ttsPrefs.engine === "chatterbox" ? "Kokoro fallback voice" : "Kokoro voice";
@@ -1460,6 +1491,7 @@ import {
   function preferencesFromControls() {
     return normalizeTtsPreferences({
       engine: el.ttsEngine.value,
+      browserVoice: el.browserVoice.value,
       voice: el.ttsVoice.value,
       rate: el.ttsRate.value,
       pitchSemitones: el.ttsPitch.value
@@ -1516,6 +1548,7 @@ import {
   function loadTtsPreferences() {
     var revision = preferenceRevision;
     populateKokoroVoices(KOKORO_VOICES);
+    populateBrowserVoices();
     return fetch("/preferences").then(function (response) {
       if (!response.ok) throw new Error("preferences " + response.status);
       return response.json();
@@ -1718,10 +1751,15 @@ import {
   });
   el.settingsClose.addEventListener("click", function () { el.settings.setAttribute("data-open", "false"); });
   el.ttsEngine.addEventListener("change", onTtsPreferenceChanged);
+  el.browserVoice.addEventListener("change", onTtsPreferenceChanged);
   el.ttsVoice.addEventListener("change", onTtsPreferenceChanged);
   el.ttsRate.addEventListener("input", onTtsPreferenceChanged);
   el.ttsPitch.addEventListener("input", onTtsPreferenceChanged);
   el.previewVoice.addEventListener("click", previewSelectedVoice);
+  if (window.speechSynthesis) {
+    window.speechSynthesis.addEventListener("voiceschanged", populateBrowserVoices);
+    setTimeout(populateBrowserVoices, 250);
+  }
 
   // ---- keyboard shortcuts: Space = talk / send, Esc = interrupt / stop ----
   document.addEventListener("keydown", function (e) {

@@ -14,6 +14,8 @@ test("renders a parseable browser module with speech settings", () => {
     assert.doesNotThrow(() => new Function(source));
     assert.match(html, /id="ttsEngine"/);
     assert.match(html, /id="ttsVoice"/);
+    assert.match(html, /id="browserVoice"/);
+    assert.match(html, /Windows voice/);
     assert.match(html, /id="ttsRate"/);
     assert.match(html, /id="ttsPitch"/);
     assert.match(html, /Chatterbox Nano \(local authorized voice\)/);
@@ -21,4 +23,7 @@ test("renders a parseable browser module with speech settings", () => {
     assert.match(html, /Last synthesis:/);
     assert.match(html, /Pitch shift \(not supported\)/);
     assert.match(html, /ttsPitch\.disabled = ttsPrefs\.engine === "chatterbox"/);
+    assert.match(html, /voices\[i\]\.voiceURI === preferences\.browserVoice/);
+    assert.match(html, /addEventListener\("voiceschanged", populateBrowserVoices\)/);
+    assert.match(html, /populateKokoroVoices\(KOKORO_VOICES\);\s+populateBrowserVoices\(\);/);
 });

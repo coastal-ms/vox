@@ -47,12 +47,13 @@ like `/vox` stay CLI-only.
 - **Live captions** — your speech streams in as interim text and commits as you go.
 - **Speaks your typed replies too** — type directly into the Copilot CLI (not just
   voice) and Vox reads the assistant's reply aloud in the panel.
-- **Browser Speech or Kokoro** — choose the built-in browser voice for instant,
-  low-resource speech or lazily load the official Kokoro 82M model for higher
-  quality local inference. Browser Speech remains the automatic fallback.
+- **Browser Speech, Kokoro, or Chatterbox Nano** — choose a Windows browser
+  voice for instant, low-resource speech or use a higher-quality local model.
+  Browser Speech remains the automatic fallback.
 - **Voice, rate, and pitch controls** — Vox persists the selected engine, every
-  voice supported by the official Kokoro JavaScript runtime, speech rate, and an
-  approximate semitone pitch shift.
+  available Windows Browser Speech voice, every voice supported by the official
+  Kokoro JavaScript runtime, speech rate, and an approximate semitone pitch
+  shift.
 - **Transcript panel** — open the 📜 panel to read the full back-and-forth; close
   or clear it anytime.
 - **Session routing + auto-switch** — the centered dropdown shows each live session;
@@ -136,8 +137,11 @@ OneDrive).
 
 Browser Speech is the default and uses the browser's
 `SpeechSynthesisUtterance`. Vox applies the selected `rate` and `pitch`
-directly. It starts immediately, uses the browser's system voice, and remains
-the fallback whenever Kokoro is loading or cannot synthesize a sentence.
+directly. Speech settings list the Windows voices exposed by
+`speechSynthesis.getVoices()` and persist the selected `voiceURI`; choosing
+**System default** leaves voice selection to Windows. Browser Speech starts
+immediately and remains the fallback whenever a local engine is loading or
+cannot synthesize a sentence.
 
 ### Kokoro
 

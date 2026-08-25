@@ -37,6 +37,7 @@ export const KOKORO_VOICES = Object.freeze({
 
 export const DEFAULT_TTS_PREFERENCES = Object.freeze({
     engine: "browser",
+    browserVoice: "",
     voice: "af_heart",
     rate: 1.02,
     pitchSemitones: 0,
@@ -53,6 +54,7 @@ export function normalizeTtsPreferences(value, catalog = KOKORO_VOICES) {
         engine: input.engine === "kokoro" || input.engine === "chatterbox"
             ? input.engine
             : "browser",
+        browserVoice: typeof input.browserVoice === "string" ? input.browserVoice.slice(0, 500) : "",
         voice: Object.hasOwn(catalog, input.voice) ? input.voice : DEFAULT_TTS_PREFERENCES.voice,
         rate: finiteInRange(input.rate, DEFAULT_TTS_PREFERENCES.rate, 0.5, 2),
         pitchSemitones: finiteInRange(input.pitchSemitones, DEFAULT_TTS_PREFERENCES.pitchSemitones, -12, 12),
