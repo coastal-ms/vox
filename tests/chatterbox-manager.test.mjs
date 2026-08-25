@@ -32,6 +32,8 @@ test("sidecar starts once, discovers its port, synthesizes, cancels, and closes"
         return new Response("{}", { status: 200 });
     };
     let spawnCalls = 0;
+    let spawnArgs;
+    let spawnOptions;
     const manager = createChatterboxManager({
         loadConfig: async () => ({
             referencePath: "C:\\safe\\authorized-reference.wav",
@@ -39,8 +41,10 @@ test("sidecar starts once, discovers its port, synthesizes, cancels, and closes"
             pythonPath: "C:\\safe\\python.exe",
             cpuThreads: 8,
         }),
-        spawnProcess: () => {
+        spawnProcess: (_python, args, options) => {
             spawnCalls += 1;
+            spawnArgs = args;
+            spawnOptions = options;
             queueMicrotask(() => child.stdout.write('{"event":"ready","port":54321,"modelLoadMs":125}\n'));
             return child;
         },
@@ -54,6 +58,9 @@ test("sidecar starts once, discovers its port, synthesizes, cancels, and closes"
     assert.equal(first.state, "ready");
     assert.equal(second.port, 54321);
     assert.equal(first.modelLoadMs, 125);
+    assert.equal(spawnArgs.at(-2), "--parent-pid");
+    assert.equal(spawnArgs.at(-1), String(process.pid));
+    assert.equal(spawnOptions.stdio[0], "ignore");
 
     const result = await manager.synthesize({ text: "hello", requestId: "request-1" });
     assert.equal(result.audio.toString(), "RIFF-test");

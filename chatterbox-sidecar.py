@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import io
 import json
 import os
@@ -17,6 +18,17 @@ from typing import Any
 
 MAX_BODY_BYTES = 64 * 1024
 MAX_TEXT_CHARS = 1200
+NANO_REPO_ID = "ResembleAI/chatterbox-nano"
+NANO_MODEL_FILES = (
+    "added_tokens.json",
+    "merges.txt",
+    "s3gen_meanflow.safetensors",
+    "special_tokens_map.json",
+    "t3_nano_v1.safetensors",
+    "tokenizer_config.json",
+    "ve.safetensors",
+    "vocab.json",
+)
 
 
 def emit(event: str, **values: Any) -> None:
@@ -98,17 +110,82 @@ def configure_cache(cache: Path) -> None:
     os.environ["HUGGINGFACE_HUB_CACHE"] = str(cache / "hub")
     os.environ["TRANSFORMERS_CACHE"] = str(cache / "transformers")
     os.environ["TORCH_HOME"] = str(cache / "torch")
+    # Xet can stall without surfacing download progress on managed Windows
+    # networks. Standard HTTPS is reliable and keeps every model file local.
+    os.environ["HF_HUB_DISABLE_XET"] = "1"
+    os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+    os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "120")
 
 
-def watch_parent_pipe() -> None:
-    """Exit if the owning Node front process disappears without cleanup."""
+def cached_bytes(cache: Path) -> int:
+    total = 0
+    for entry in cache.rglob("*"):
+        try:
+            if entry.is_file():
+                total += entry.stat().st_size
+        except OSError:
+            # Hugging Face atomically replaces temporary files while the
+            # progress monitor walks the cache.
+            continue
+    return total
+
+
+def download_nano_model(cache: Path, snapshot_download_fn: Any = None) -> Path:
+    if snapshot_download_fn is None:
+        from huggingface_hub import snapshot_download
+
+        snapshot_download_fn = snapshot_download
+
+    stopped = threading.Event()
+
+    def report_progress() -> None:
+        while not stopped.wait(2):
+            mib = cached_bytes(cache) / (1024 * 1024)
+            emit("status", detail=f"Downloading Chatterbox Nano ({mib:.0f} MiB cached)")
+
+    emit("status", detail="Downloading Chatterbox Nano model")
+    monitor = threading.Thread(target=report_progress, daemon=True)
+    monitor.start()
     try:
-        while os.read(sys.stdin.fileno(), 1):
-            pass
-    except (OSError, ValueError):
-        pass
+        return Path(snapshot_download_fn(
+            repo_id=NANO_REPO_ID,
+            allow_patterns=list(NANO_MODEL_FILES),
+            cache_dir=str(cache / "hub"),
+            token=os.getenv("HF_TOKEN") or None,
+        ))
     finally:
-        os._exit(0)
+        stopped.set()
+        monitor.join(timeout=3)
+
+
+def wait_for_parent_exit(parent_pid: int) -> None:
+    """Wait without holding the GIL until the owning Node process exits."""
+    if os.name == "nt":
+        process_synchronize = 0x00100000
+        infinite = 0xFFFFFFFF
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = (ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32)
+        kernel32.OpenProcess.restype = ctypes.c_void_p
+        kernel32.WaitForSingleObject.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+        kernel32.WaitForSingleObject.restype = ctypes.c_uint32
+        kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+
+        handle = kernel32.OpenProcess(process_synchronize, False, parent_pid)
+        if not handle:
+            return
+        try:
+            kernel32.WaitForSingleObject(handle, infinite)
+        finally:
+            kernel32.CloseHandle(handle)
+        return
+
+    while os.getppid() == parent_pid:
+        time.sleep(1)
+
+
+def watch_parent_process(parent_pid: int) -> None:
+    wait_for_parent_exit(parent_pid)
+    os._exit(0)
 
 
 def load_runtime(reference: Path, cache: Path, threads: int) -> ModelRuntime:
@@ -122,8 +199,9 @@ def load_runtime(reference: Path, cache: Path, threads: int) -> ModelRuntime:
         torch.set_num_interop_threads(1)
     except RuntimeError:
         pass
+    model_path = download_nano_model(cache)
     emit("status", detail="Loading Chatterbox Nano on CPU")
-    model = ChatterboxTurboTTS.from_pretrained(device="cpu", nano=True)
+    model = ChatterboxTurboTTS.from_local(model_path, device="cpu", nano=True)
     emit("status", detail="Conditioning the authorized local reference")
     model.prepare_conditionals(str(reference))
     return ModelRuntime(model, int(model.sr))
@@ -217,6 +295,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--voices-root", required=True)
     parser.add_argument("--cache", required=True)
     parser.add_argument("--threads", type=int, default=8)
+    parser.add_argument("--parent-pid", required=True, type=int)
     return parser.parse_args()
 
 
@@ -226,9 +305,17 @@ def main() -> int:
         raise ValueError("sidecar must bind to 127.0.0.1 on a valid port")
     if args.threads < 1 or args.threads > 32:
         raise ValueError("threads must be from 1 to 32")
+    if args.parent_pid < 1:
+        raise ValueError("parent PID must be positive")
 
     began = time.perf_counter()
-    threading.Thread(target=watch_parent_pipe, daemon=True).start()
+    for parent_pid in {args.parent_pid, os.getppid()}:
+        if parent_pid > 0:
+            threading.Thread(
+                target=watch_parent_process,
+                args=(parent_pid,),
+                daemon=True,
+            ).start()
     reference = validate_reference(args.reference, args.voices_root)
     cache = Path(args.cache).resolve(strict=False)
     runtime = load_runtime(reference, cache, args.threads)

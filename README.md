@@ -197,9 +197,9 @@ This copies the reference to
 `~/.copilot/vox-chatterbox/voices/authorized-reference.wav`, creates a virtual
 environment under `~/.copilot/vox-chatterbox/.venv`, installs
 the `chatterbox-tts==0.1.7` dependency graph only from Microsoft's approved
-internal Python proxy, then installs the Nano-capable package source from a
-pinned commit in Resemble AI's official GitHub repository. It writes validated
-local settings to
+internal Python proxy, including `setuptools<81` for the PerTh watermark
+runtime, then installs the Nano-capable package source from a pinned commit in
+Resemble AI's official GitHub repository. It writes validated local settings to
 `~/.copilot/vox-chatterbox/config.json`. Model weights and generated data use
 `~/.copilot/vox-chatterbox/cache`, and pip's download cache stays under
 `~/.copilot/vox-chatterbox/pip-cache`. Vox never commits or uploads the
@@ -210,13 +210,16 @@ personal reference must never be redistributed or made a project/default
 asset.
 
 Vox starts one dependency-light Python sidecar on an ephemeral `127.0.0.1`
-port. It loads
-`ChatterboxTurboTTS.from_pretrained(device="cpu", nano=True)` once and prepares
-the reference conditioning once, then reuses the model across canvas reloads
+port. It downloads the required official Nano snapshot, loads
+`ChatterboxTurboTTS` on CPU with `nano=True` once, and prepares the reference
+conditioning once, then reuses the model across canvas reloads
 while the shared Vox front process remains alive. The settings panel shows
 starting/ready/error state, the validated local reference path, and the latest
 synthesis latency. The first start can take longer while Hugging Face downloads
-the model into the local cache; subsequent starts reuse those files.
+the model into the local cache; subsequent starts reuse those files. Vox uses
+standard Hugging Face HTTPS downloads rather than Xet on Windows, reports
+cached download progress in diagnostics, and requests only the files required
+by the Nano CPU runtime.
 
 Preview and normal playback honor the selected rate through pitch-preserving
 browser playback. Chatterbox Nano has no pitch control, so pitch is labeled

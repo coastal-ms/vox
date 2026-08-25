@@ -95,6 +95,7 @@ if ($InstallChatterbox -or $ChatterboxReferenceWav) {
         & $pythonExe -m pip install --disable-pip-version-check `
             --cache-dir $pipCacheDir `
             --index-url $packageProxy `
+            'setuptools<81' `
             'chatterbox-tts==0.1.7'
         if ($LASTEXITCODE -ne 0) {
             throw 'Chatterbox dependency installation failed through the approved Microsoft package proxy.'

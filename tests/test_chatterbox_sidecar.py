@@ -37,6 +37,26 @@ class ChatterboxSidecarTests(unittest.TestCase):
             SIDECAR.configure_cache(cache)
             self.assertEqual(os.environ["HF_HOME"], str(cache))
             self.assertEqual(os.environ["TORCH_HOME"], str(cache / "torch"))
+            self.assertEqual(os.environ["HF_HUB_DISABLE_XET"], "1")
+
+    def test_nano_download_uses_only_required_files_and_standard_cache(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "cache"
+            SIDECAR.configure_cache(cache)
+            calls = []
+
+            def snapshot_download(**kwargs):
+                calls.append(kwargs)
+                return cache / "snapshot"
+
+            result = SIDECAR.download_nano_model(cache, snapshot_download)
+            self.assertEqual(result, cache / "snapshot")
+            self.assertEqual(calls[0]["repo_id"], "ResembleAI/chatterbox-nano")
+            self.assertEqual(calls[0]["cache_dir"], str(cache / "hub"))
+            self.assertEqual(
+                set(calls[0]["allow_patterns"]),
+                set(SIDECAR.NANO_MODEL_FILES),
+            )
 
     def test_pre_canceled_request_does_not_invoke_model(self):
         class Model:

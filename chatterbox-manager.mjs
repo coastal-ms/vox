@@ -87,15 +87,15 @@ export function createChatterboxManager({
                 "--voices-root", CHATTERBOX_VOICES_DIR,
                 "--cache", config.cachePath,
                 "--threads", String(config.cpuThreads),
+                "--parent-pid", String(process.pid),
             ];
             const spawned = spawnProcess(config.pythonPath, args, {
                 windowsHide: true,
-                stdio: ["pipe", "pipe", "pipe"],
+                stdio: ["ignore", "pipe", "pipe"],
                 env: { ...process.env, PYTHONUNBUFFERED: "1" },
             });
             child = spawned;
             spawned.unref?.();
-            spawned.stdin?.unref?.();
 
             const stderr = [];
             spawned.stderr?.on("data", (chunk) => {
@@ -256,7 +256,6 @@ export function createChatterboxManager({
             return;
         }
         state = "stopping";
-        try { active.stdin?.end(); } catch {}
         if (port) {
             sidecarRequest("/shutdown", { method: "POST" }, undefined, 1000).catch(() => {});
         }
