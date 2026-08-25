@@ -12,12 +12,14 @@ test("preferences persist as normalized JSON", async () => {
         const saved = await writeTtsPreferences({
             engine: "kokoro",
             browserVoice: "Microsoft David Desktop - English (United States)",
+            sapiVoice: "Ava voice token",
             voice: "bm_fable",
             rate: 1.4,
             pitchSemitones: 3,
         }, path);
         assert.deepEqual(await readTtsPreferences(path), saved);
         assert.match(await readFile(path, "utf8"), /"browserVoice": "Microsoft David Desktop/);
+        assert.match(await readFile(path, "utf8"), /"sapiVoice": "Ava voice token"/);
         assert.match(await readFile(path, "utf8"), /"voice": "bm_fable"/);
     } finally {
         await rm(dir, { recursive: true, force: true });
@@ -32,6 +34,7 @@ test("preferences persist Chatterbox Nano as a supported engine", async () => {
         assert.deepEqual(await readTtsPreferences(path), {
             engine: "chatterbox",
             browserVoice: "",
+            sapiVoice: "",
             voice: "af_heart",
             rate: 1.1,
             pitchSemitones: 4,

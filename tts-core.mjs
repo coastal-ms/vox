@@ -38,6 +38,7 @@ export const KOKORO_VOICES = Object.freeze({
 export const DEFAULT_TTS_PREFERENCES = Object.freeze({
     engine: "browser",
     browserVoice: "",
+    sapiVoice: "",
     voice: "af_heart",
     rate: 1.02,
     pitchSemitones: 0,
@@ -51,10 +52,11 @@ function finiteInRange(value, fallback, min, max) {
 export function normalizeTtsPreferences(value, catalog = KOKORO_VOICES) {
     const input = value && typeof value === "object" ? value : {};
     return {
-        engine: input.engine === "kokoro" || input.engine === "chatterbox"
+        engine: input.engine === "kokoro" || input.engine === "chatterbox" || input.engine === "sapi"
             ? input.engine
             : "browser",
         browserVoice: typeof input.browserVoice === "string" ? input.browserVoice.slice(0, 500) : "",
+        sapiVoice: typeof input.sapiVoice === "string" ? input.sapiVoice.slice(0, 1000) : "",
         voice: Object.hasOwn(catalog, input.voice) ? input.voice : DEFAULT_TTS_PREFERENCES.voice,
         rate: finiteInRange(input.rate, DEFAULT_TTS_PREFERENCES.rate, 0.5, 2),
         pitchSemitones: finiteInRange(input.pitchSemitones, DEFAULT_TTS_PREFERENCES.pitchSemitones, -12, 12),
@@ -92,13 +94,16 @@ export async function speakWithFallback({
     engine,
     chatterbox,
     kokoro,
+    sapi,
     browser,
     text,
     preferences,
     cancelled,
     onFallback,
 }) {
-    const candidates = engine === "chatterbox"
+    const candidates = engine === "sapi"
+        ? [["sapi", sapi], ["browser", browser]]
+        : engine === "chatterbox"
         ? [["chatterbox", chatterbox], ["kokoro", kokoro], ["browser", browser]]
         : engine === "kokoro"
             ? [["kokoro", kokoro], ["browser", browser]]

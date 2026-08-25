@@ -447,7 +447,7 @@ export function renderHtml(instanceId) {
       <div class="settings-head"><h2>Speech settings</h2><button id="settingsClose" class="ghost" title="Close">&#x2715;</button></div>
       <div class="field">
         <label for="ttsEngine">Engine</label>
-        <select id="ttsEngine"><option value="browser">Browser Speech</option><option value="kokoro">Kokoro (local model)</option><option value="chatterbox">Chatterbox Nano (local authorized voice)</option></select>
+        <select id="ttsEngine"><option value="browser">Browser Speech</option><option value="sapi">SAPI 5 Natural (Windows)</option><option value="kokoro">Kokoro (local model)</option><option value="chatterbox">Chatterbox Nano (local authorized voice)</option></select>
       </div>
       <div class="field">
         <label id="ttsVoiceLabel" for="ttsVoice">Kokoro voice</label>
@@ -456,6 +456,10 @@ export function renderHtml(instanceId) {
       <div id="browserVoiceField" class="field">
         <label for="browserVoice">Windows voice</label>
         <select id="browserVoice"><option value="">System default</option></select>
+      </div>
+      <div id="sapiVoiceField" class="field" hidden>
+        <label for="sapiVoice">SAPI 5 voice</label>
+        <select id="sapiVoice"><option value="">Loading SAPI voices...</option></select>
       </div>
       <div class="field">
         <label for="ttsRate">Speech rate</label>
@@ -528,6 +532,8 @@ import {
     ttsVoice: document.getElementById("ttsVoice"),
     browserVoiceField: document.getElementById("browserVoiceField"),
     browserVoice: document.getElementById("browserVoice"),
+    sapiVoiceField: document.getElementById("sapiVoiceField"),
+    sapiVoice: document.getElementById("sapiVoice"),
     ttsRate: document.getElementById("ttsRate"),
     ttsRateValue: document.getElementById("ttsRateValue"),
     ttsPitch: document.getElementById("ttsPitch"),
@@ -540,6 +546,83 @@ import {
     logClear: document.getElementById("logClear"),
     logClose: document.getElementById("logClose"),
     toast: document.getElementById("toast"),
+  };
+
+  var sapiController = null;
+  var sapiVoicesLoaded = false;
+  function loadSapiVoices() {
+    return fetch("/sapi/voices", { cache: "no-store" }).then(function (response) {
+      if (!response.ok) throw new Error("SAPI voices " + response.status);
+      return response.json();
+    }).then(function (data) {
+      var sapiOption = el.ttsEngine.querySelector('option[value="sapi"]');
+      if (data.supported === false) {
+        if (sapiOption) sapiOption.disabled = true;
+        el.sapiVoice.innerHTML = '<option value="">SAPI 5 requires Windows</option>';
+        sapiVoicesLoaded = true;
+        if (ttsPrefs.engine === "sapi") {
+          ttsPrefs = normalizeTtsPreferences({ ...ttsPrefs, engine: "browser" });
+          renderTtsPreferences();
+          saveTtsPreferences();
+        }
+        return [];
+      }
+      if (sapiOption) sapiOption.disabled = false;
+      var voices = Array.isArray(data.voices) ? data.voices : [];
+      var selected = ttsPrefs.sapiVoice;
+      el.sapiVoice.innerHTML = "";
+      for (var i = 0; i < voices.length; i++) {
+        var option = document.createElement("option");
+        option.value = voices[i].id;
+        option.textContent = voices[i].name;
+        el.sapiVoice.appendChild(option);
+      }
+      var ava = voices.find(function (voice) {
+        return voice.name === "Microsoft Ava Online (Natural) - English (United States)";
+      });
+      if (voices.some(function (voice) { return voice.id === selected; })) el.sapiVoice.value = selected;
+      else if (ava) {
+        ttsPrefs = normalizeTtsPreferences({ ...ttsPrefs, sapiVoice: ava.id });
+        el.sapiVoice.value = ava.id;
+        saveTtsPreferences();
+      } else if (voices.length) {
+        ttsPrefs = normalizeTtsPreferences({ ...ttsPrefs, sapiVoice: voices[0].id });
+        el.sapiVoice.value = voices[0].id;
+        saveTtsPreferences();
+      }
+      sapiVoicesLoaded = true;
+      return voices;
+    }).catch(function (error) {
+      el.sapiVoice.innerHTML = '<option value="">SAPI voices unavailable</option>';
+      toast("Could not load SAPI 5 voices");
+      throw error;
+    });
+  }
+
+  var sapiDriver = {
+    speak: function (text, preferences, cancelled) {
+      if (cancelled && cancelled()) return Promise.resolve();
+      var controller = new AbortController();
+      sapiController = controller;
+      return fetch("/sapi/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text, voice: preferences.sapiVoice, rate: preferences.rate }),
+        signal: controller.signal
+      }).then(function (response) {
+        if (!response.ok) throw new Error("SAPI speech failed (" + response.status + ")");
+        return response.json();
+      }).finally(function () {
+        if (sapiController === controller) sapiController = null;
+      });
+    },
+    cancel: function () {
+      if (sapiController) {
+        try { sapiController.abort(); } catch (e) {}
+        sapiController = null;
+      }
+      fetch("/sapi/cancel", { method: "POST", keepalive: true }).catch(function () {});
+    }
   };
 
   var stream = null, recog = null;
@@ -1189,6 +1272,7 @@ import {
       engine: ttsPrefs.engine,
       chatterbox: chatterboxDriver,
       kokoro: kokoroDriver,
+      sapi: sapiDriver,
       browser: browserDriver,
       text: text,
       preferences: ttsPrefs,
@@ -1212,7 +1296,7 @@ import {
   }
   function stopSpeaking() {
     previewGeneration++;
-    speechQueue.cancel(function () { browserDriver.cancel(); kokoroDriver.cancel(); chatterboxDriver.cancel(); });
+    speechQueue.cancel(function () { browserDriver.cancel(); sapiDriver.cancel(); kokoroDriver.cancel(); chatterboxDriver.cancel(); });
     if (el.previewVoice) el.previewVoice.disabled = false;
   }
   function waitForSpeech() {
@@ -1228,6 +1312,8 @@ import {
       ? "Hi, I'm " + voice.name + "."
       : preferences.engine === "chatterbox"
         ? "Hi, this is Vox using your authorized local voice."
+        : preferences.engine === "sapi"
+          ? "Hello. This is your selected SAPI five natural voice."
         : "Hi, this is Vox.";
     ttsPrefs = preferences;
     renderTtsPreferences();
@@ -1249,6 +1335,8 @@ import {
             if (cancelled()) return;
             return chatterboxDriver.speak(sample, preferences, cancelled);
           })
+        : preferences.engine === "sapi"
+        ? sapiDriver.speak(sample, preferences, cancelled)
         : browserDriver.speak(sample, preferences, cancelled);
     Promise.resolve(playback).then(function () {
       if (!cancelled()) toast("Voice preview complete");
@@ -1286,7 +1374,8 @@ import {
   }
   function flushSentences(buf) {
     var idx, guard = 0;
-    while ((idx = ttsPrefs.engine === "browser" ? findSentenceEnd(buf) : findLocalTtsChunkEnd(buf)) > -1 && guard++ < 40) {
+    var localModel = ttsPrefs.engine === "kokoro" || ttsPrefs.engine === "chatterbox";
+    while ((idx = localModel ? findLocalTtsChunkEnd(buf) : findSentenceEnd(buf)) > -1 && guard++ < 40) {
       var s = buf.slice(0, idx + 1).trim();
       if (s) enqueueSpeak(s);
       buf = buf.slice(idx + 1).replace(/^\s+/, "");
@@ -1472,26 +1561,34 @@ import {
     el.browserVoice.value = ttsPrefs.browserVoice;
     el.browserVoiceField.hidden = ttsPrefs.engine !== "browser";
     el.browserVoice.disabled = ttsPrefs.engine !== "browser";
+    el.sapiVoice.value = ttsPrefs.sapiVoice;
+    el.sapiVoiceField.hidden = ttsPrefs.engine !== "sapi";
+    el.sapiVoice.disabled = ttsPrefs.engine !== "sapi";
     el.ttsVoice.value = ttsPrefs.voice;
     el.ttsVoice.disabled = ttsPrefs.engine !== "kokoro";
     el.ttsVoiceLabel.textContent = ttsPrefs.engine === "chatterbox" ? "Kokoro fallback voice" : "Kokoro voice";
     el.ttsRate.value = String(ttsPrefs.rate);
     el.ttsPitch.value = String(ttsPrefs.pitchSemitones);
-    el.ttsPitch.disabled = ttsPrefs.engine === "chatterbox";
+    el.ttsPitch.disabled = ttsPrefs.engine === "chatterbox" || ttsPrefs.engine === "sapi";
     el.ttsRateValue.textContent = ttsPrefs.rate.toFixed(2) + "x";
-    el.ttsPitchValue.textContent = ttsPrefs.engine === "chatterbox"
+    el.ttsPitchValue.textContent = ttsPrefs.engine === "chatterbox" || ttsPrefs.engine === "sapi"
       ? "Unavailable"
       : (ttsPrefs.pitchSemitones > 0 ? "+" : "") + ttsPrefs.pitchSemitones + " st";
-    el.ttsPitchLabel.textContent = ttsPrefs.engine === "chatterbox" ? "Pitch shift (not supported)" : "Pitch shift";
+    el.ttsPitchLabel.textContent = ttsPrefs.engine === "chatterbox" || ttsPrefs.engine === "sapi"
+      ? "Pitch shift (not supported)"
+      : "Pitch shift";
     el.ttsPitchNote.textContent = ttsPrefs.engine === "chatterbox"
       ? "Chatterbox Nano does not expose pitch control. Speech rate uses pitch-preserving browser playback when supported."
-      : "Pitch is approximate. Kokoro compensates generation speed before Web Audio pitch shifting so the selected speech rate stays nearly constant.";
+      : ttsPrefs.engine === "sapi"
+        ? "SAPI 5 Natural plays directly through Windows. Rate is supported; pitch is controlled by the selected voice."
+        : "Pitch is approximate. Kokoro compensates generation speed before Web Audio pitch shifting so the selected speech rate stays nearly constant.";
   }
 
   function preferencesFromControls() {
     return normalizeTtsPreferences({
       engine: el.ttsEngine.value,
       browserVoice: el.browserVoice.value,
+      sapiVoice: el.sapiVoice.value,
       voice: el.ttsVoice.value,
       rate: el.ttsRate.value,
       pitchSemitones: el.ttsPitch.value
@@ -1533,6 +1630,8 @@ import {
       void prepareChatterbox(previousEngine !== "chatterbox").catch(function () {});
       void warmKokoroVoice(ttsPrefs.voice);
       void prepareKokoro().catch(function () {});
+    } else if (ttsPrefs.engine === "sapi" && !sapiVoicesLoaded) {
+      void loadSapiVoices();
     }
   }
 
@@ -1556,6 +1655,7 @@ import {
       if (revision !== preferenceRevision) return;
       ttsPrefs = normalizeTtsPreferences(saved);
       renderTtsPreferences();
+      void loadSapiVoices().catch(function () {});
       if (ttsPrefs.engine === "kokoro") void prepareKokoro().catch(function () {});
       if (ttsPrefs.engine === "chatterbox") {
         void prepareChatterbox().catch(function () {});
@@ -1565,6 +1665,7 @@ import {
       if (revision !== preferenceRevision) return;
       ttsPrefs = normalizeTtsPreferences();
       renderTtsPreferences();
+      void loadSapiVoices().catch(function () {});
       toast("Using default speech settings");
     });
   }
@@ -1614,7 +1715,8 @@ import {
   }
   function flushListen() {
     var idx, guard = 0;
-    while ((idx = ttsPrefs.engine === "browser" ? findSentenceEnd(listenSent) : findLocalTtsChunkEnd(listenSent)) > -1 && guard++ < 60) {
+    var localModel = ttsPrefs.engine === "kokoro" || ttsPrefs.engine === "chatterbox";
+    while ((idx = localModel ? findLocalTtsChunkEnd(listenSent) : findSentenceEnd(listenSent)) > -1 && guard++ < 60) {
       var s = listenSent.slice(0, idx + 1).trim();
       if (s) { var c = cleanForSpeech(s); if (c) enqueueSpeak(c); }
       listenSent = listenSent.slice(idx + 1).replace(/^\\s+/, "");
@@ -1752,6 +1854,7 @@ import {
   el.settingsClose.addEventListener("click", function () { el.settings.setAttribute("data-open", "false"); });
   el.ttsEngine.addEventListener("change", onTtsPreferenceChanged);
   el.browserVoice.addEventListener("change", onTtsPreferenceChanged);
+  el.sapiVoice.addEventListener("change", onTtsPreferenceChanged);
   el.ttsVoice.addEventListener("change", onTtsPreferenceChanged);
   el.ttsRate.addEventListener("input", onTtsPreferenceChanged);
   el.ttsPitch.addEventListener("input", onTtsPreferenceChanged);

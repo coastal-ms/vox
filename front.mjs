@@ -4,6 +4,7 @@ import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { DIR, KOKORO_CACHE, PUBLIC_PORT } from "./config.mjs";
 import { createChatterboxManager } from "./chatterbox-manager.mjs";
+import { createSapiManager } from "./sapi-manager.mjs";
 import { listen, readBody } from "./http-util.mjs";
 import { readTtsPreferences, writeTtsPreferences } from "./preferences.mjs";
 import * as registry from "./registry.mjs";
@@ -122,6 +123,7 @@ function pipeListen(session, res) {
 export async function ensureFront({ selfId, selfInternalPort, servePage, localTurn, localListen }) {
     if (registry.isFrontAlive()) return { hosting: false };
     const chatterbox = createChatterboxManager();
+    const sapi = createSapiManager();
 
     const server = http.createServer(async (req, res) => {
         try {
@@ -162,6 +164,22 @@ export async function ensureFront({ selfId, selfInternalPort, servePage, localTu
 
             if (req.method === "POST" && url.pathname === "/preferences") {
                 sendJson(res, 200, await writeTtsPreferences(await readJson(req)));
+                return;
+            }
+
+            if (req.method === "GET" && url.pathname === "/sapi/voices") {
+                sendJson(res, 200, { supported: sapi.supported, voices: await sapi.voices() });
+                return;
+            }
+
+            if (req.method === "POST" && url.pathname === "/sapi/speak") {
+                sendJson(res, 200, await sapi.speak(await readJson(req)));
+                return;
+            }
+
+            if (req.method === "POST" && url.pathname === "/sapi/cancel") {
+                sapi.cancel();
+                sendJson(res, 200, { canceled: true });
                 return;
             }
 
@@ -279,10 +297,11 @@ export async function ensureFront({ selfId, selfInternalPort, servePage, localTu
     }
 
     registry.setFront(process.pid);
-    return { server, hosting: true, chatterbox };
+    return { server, hosting: true, chatterbox, sapi };
 }
 
 export function closeFront(state) {
     state?.chatterbox?.close();
+    state?.sapi?.close();
     state?.server?.close();
 }

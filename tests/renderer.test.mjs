@@ -16,6 +16,8 @@ test("renders a parseable browser module with speech settings", () => {
     assert.match(html, /id="ttsVoice"/);
     assert.match(html, /id="browserVoice"/);
     assert.match(html, /Windows voice/);
+    assert.match(html, /SAPI 5 Natural \(Windows\)/);
+    assert.match(html, /id="sapiVoice"/);
     assert.match(html, /id="ttsRate"/);
     assert.match(html, /id="ttsPitch"/);
     assert.match(html, /Chatterbox Nano \(local authorized voice\)/);
@@ -26,4 +28,8 @@ test("renders a parseable browser module with speech settings", () => {
     assert.match(html, /voices\[i\]\.voiceURI === preferences\.browserVoice/);
     assert.match(html, /addEventListener\("voiceschanged", populateBrowserVoices\)/);
     assert.match(html, /populateKokoroVoices\(KOKORO_VOICES\);\s+populateBrowserVoices\(\);/);
+    assert.match(html, /fetch\("\/sapi\/voices"/);
+    assert.match(html, /fetch\("\/sapi\/speak"/);
+    assert.match(html, /fetch\("\/sapi\/cancel"/);
+    assert.match(html, /ttsPitch\.disabled = ttsPrefs\.engine === "chatterbox" \|\| ttsPrefs\.engine === "sapi"/);
 });

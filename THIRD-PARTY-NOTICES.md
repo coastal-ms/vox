@@ -20,6 +20,13 @@ Source: <https://github.com/hexgrad/kokoro>
 The full license text is distributed with Vox at
 `LICENSES/Apache-2.0.txt`.
 
+## Microsoft Speech API (SAPI)
+
+On Windows, Vox can automate the locally installed Microsoft Speech API through
+the `SAPI.SpVoice` COM component. Vox does not distribute SAPI, Microsoft voice
+packages, or Natural voice data. Availability and usage rights are determined
+by the user's Windows installation and any voice packages installed there.
+
 ## Chatterbox Nano
 
 Vox can optionally use the `chatterbox-tts` Python package and download the

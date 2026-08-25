@@ -22,12 +22,14 @@ test("normalizes persisted preferences and rejects unknown catalog entries", () 
     assert.deepEqual(normalizeTtsPreferences({
         engine: "kokoro",
         browserVoice: "Microsoft Aria Online (Natural) - English (United States)",
+        sapiVoice: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech_OneCore\\Voices\\Tokens\\MSTTS_V110_enUS_AvaM",
         voice: "bf_emma",
         rate: 9,
         pitchSemitones: -99,
     }), {
         engine: "kokoro",
         browserVoice: "Microsoft Aria Online (Natural) - English (United States)",
+        sapiVoice: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech_OneCore\\Voices\\Tokens\\MSTTS_V110_enUS_AvaM",
         voice: "bf_emma",
         rate: 2,
         pitchSemitones: -12,
@@ -39,6 +41,14 @@ test("normalizes persisted Browser Speech voice identifiers", () => {
     assert.equal(normalizeTtsPreferences({ browserVoice: "voice-uri" }).browserVoice, "voice-uri");
     assert.equal(normalizeTtsPreferences({ browserVoice: 42 }).browserVoice, "");
     assert.equal(normalizeTtsPreferences({ browserVoice: "x".repeat(501) }).browserVoice.length, 500);
+});
+
+test("normalizes persisted SAPI engine and voice identifiers", () => {
+    const normalized = normalizeTtsPreferences({ engine: "sapi", sapiVoice: "voice-token" });
+    assert.equal(normalized.engine, "sapi");
+    assert.equal(normalized.sapiVoice, "voice-token");
+    assert.equal(normalizeTtsPreferences({ sapiVoice: 42 }).sapiVoice, "");
+    assert.equal(normalizeTtsPreferences({ sapiVoice: "x".repeat(1001) }).sapiVoice.length, 1000);
 });
 
 test("catalog matches every voice exposed by official kokoro-js 1.2.1", () => {
@@ -83,6 +93,20 @@ test("Kokoro failures fall back to browser speech", async () => {
     });
     assert.equal(result, "browser");
     assert.deepEqual(calls, ["model loading", "hello"]);
+});
+
+test("SAPI failures fall back directly to browser speech", async () => {
+    const calls = [];
+    const result = await speakWithFallback({
+        engine: "sapi",
+        sapi: { speak: async () => { calls.push("sapi"); throw new Error("host unavailable"); } },
+        browser: { speak: async (text) => { calls.push(`browser:${text}`); return "browser"; } },
+        text: "hello",
+        preferences: { ...DEFAULT_TTS_PREFERENCES, engine: "sapi" },
+        onFallback: (error, _from, next) => calls.push(`${error.message}->${next}`),
+    });
+    assert.equal(result, "browser");
+    assert.deepEqual(calls, ["sapi", "host unavailable->browser", "browser:hello"]);
 });
 
 test("Chatterbox failures fall back through Kokoro before browser speech", async () => {

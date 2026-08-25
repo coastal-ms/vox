@@ -55,6 +55,8 @@ Copy-Item -Path (Join-Path $here '*.mjs') -Destination $dest -Force
 Write-Host "Copied   : *.mjs -> $dest"
 Copy-Item -Path (Join-Path $here 'chatterbox-sidecar.py') -Destination $dest -Force
 Write-Host "Copied   : chatterbox-sidecar.py -> $dest"
+Copy-Item -Path (Join-Path $here 'sapi-host.ps1') -Destination $dest -Force
+Write-Host "Copied   : sapi-host.ps1 -> $dest"
 Copy-Item -Path (Join-Path $here 'THIRD-PARTY-NOTICES.md') -Destination $dest -Force
 Copy-Item -Path (Join-Path $here 'LICENSES') -Destination $dest -Recurse -Force
 Write-Host "Copied   : third-party notices -> $dest"

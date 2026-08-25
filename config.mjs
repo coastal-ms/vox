@@ -15,3 +15,4 @@ export const CHATTERBOX_REFERENCE_FILE = join(CHATTERBOX_VOICES_DIR, "authorized
 export const CHATTERBOX_CACHE_DIR = join(CHATTERBOX_DIR, "cache");
 export const CHATTERBOX_VENV_PYTHON = join(CHATTERBOX_DIR, ".venv", "Scripts", "python.exe");
 export const CHATTERBOX_SIDECAR_FILE = join(DIR, "chatterbox-sidecar.py");
+export const SAPI_HOST_FILE = join(DIR, "sapi-host.ps1");

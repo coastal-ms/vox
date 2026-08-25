@@ -47,9 +47,9 @@ like `/vox` stay CLI-only.
 - **Live captions** — your speech streams in as interim text and commits as you go.
 - **Speaks your typed replies too** — type directly into the Copilot CLI (not just
   voice) and Vox reads the assistant's reply aloud in the panel.
-- **Browser Speech, Kokoro, or Chatterbox Nano** — choose a Windows browser
-  voice for instant, low-resource speech or use a higher-quality local model.
-  Browser Speech remains the automatic fallback.
+- **Four speech engines** — choose Browser Speech, direct Windows SAPI 5
+  Natural, Kokoro, or Chatterbox Nano. Browser Speech remains the automatic
+  fallback.
 - **Voice, rate, and pitch controls** — Vox persists the selected engine, every
   available Windows Browser Speech voice, every voice supported by the official
   Kokoro JavaScript runtime, speech rate, and an approximate semitone pitch
@@ -142,6 +142,27 @@ directly. Speech settings list the Windows voices exposed by
 **System default** leaves voice selection to Windows. Browser Speech starts
 immediately and remains the fallback whenever a local engine is loading or
 cannot synthesize a sentence.
+
+### SAPI 5 Natural (Windows)
+
+On Windows, Vox can speak directly through the installed `SAPI.SpVoice` COM
+engine without routing audio back through the browser. `setup.ps1` installs a
+small PowerShell host alongside the extension. The shared Vox front process
+starts that host lazily, keeps it alive across sentences and canvas reloads, and
+enumerates the machine's installed SAPI voices in Speech settings.
+
+Vox prefers **Microsoft Ava Online (Natural) - English (United States)** when it
+is installed and no prior SAPI voice is saved. The selected SAPI token is
+persisted as `sapiVoice`. Speech rate is mapped to SAPI's rate control; pitch is
+not exposed and is disabled for this engine. Audio plays directly through the
+Windows default output device.
+
+Mute, barge-in, or Stop terminates the active PowerShell host because
+`SAPI.SpVoice.Speak` is synchronous. The next SAPI sentence starts a fresh
+persistent host. If SAPI startup or speech fails, Vox falls back directly to
+Browser Speech. On non-Windows systems SAPI is marked unsupported and the other
+engines continue to work normally; `setup.sh` does not install the Windows-only
+PowerShell host.
 
 ### Kokoro
 
@@ -259,7 +280,8 @@ automatic Chatterbox dependency setup is currently supported only by
 
 A `/vox` command spins up a small local server on port `4321` and registers the
 session in `registry.json`. The browser canvas streams microphone audio in and plays synthesized replies
-through Browser Speech or Kokoro, routing spoken turns to the active session. A
+through Browser Speech, SAPI, Kokoro, or Chatterbox Nano, routing spoken turns
+to the active session. A
 persistent `/listen` channel also streams replies from **typed** CLI turns to the
 panel so they're spoken too.
 

@@ -19,6 +19,9 @@ cp "$HERE"/*.mjs "$DEST"/
 echo "Copied   : *.mjs -> $DEST"
 cp "$HERE/chatterbox-sidecar.py" "$DEST"/
 echo "Copied   : chatterbox-sidecar.py -> $DEST"
+# SAPI is Windows-only. The Node manager remains installed so shared code can
+# report it unsupported without breaking Browser Speech or Kokoro.
+echo "Skipped  : sapi-host.ps1 (Windows-only)"
 cp "$HERE/THIRD-PARTY-NOTICES.md" "$DEST"/
 rm -rf "$DEST/LICENSES"
 cp -R "$HERE/LICENSES" "$DEST/LICENSES"
